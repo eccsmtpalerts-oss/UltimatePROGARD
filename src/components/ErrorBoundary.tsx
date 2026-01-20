@@ -54,6 +54,10 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
+      const showDebug =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <div className="max-w-md w-full text-center space-y-6">
@@ -72,7 +76,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </p>
             </div>
 
-            {process.env.NODE_ENV === "development" && this.state.error && (
+            {showDebug && this.state.error && (
               <div className="text-left bg-muted p-4 rounded-lg text-sm">
                 <p className="font-semibold text-destructive mb-2">
                   {this.state.error.name}: {this.state.error.message}

@@ -1,10 +1,8 @@
-
-import { useState, useEffect } from "react";
+ 
 import { Link } from "react-router-dom";
 import { ArrowRight, Calendar, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { postStorage, AdminPost } from "@/lib/admin-storage";
 import { postsAPI } from "@/lib/api-client";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 
@@ -23,8 +21,6 @@ interface PostsSectionProps {
 }
 
 export function PostsSection({ limit = 3 }: PostsSectionProps) {
-  console.log('🔍 PostsSection: Component loading...');
-  
   // Use infinite scroll for posts, but limit to specified number
   const {
     items,
@@ -35,12 +31,8 @@ export function PostsSection({ limit = 3 }: PostsSectionProps) {
     initialLimit: limit,
   });
 
-  console.log('📝 PostsSection: Infinite scroll items:', { items, isLoading });
-
   // Get posts from items
   const posts = items.slice(0, limit);
-  
-  console.log('✅ PostsSection: Final posts array:', posts);
 
   return (
     <section id="posts" className="py-8 md:py-16 relative overflow-hidden wavy-top wavy-bottom">

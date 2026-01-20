@@ -19,12 +19,12 @@ function question(query) {
 }
 
 async function createAdminUser() {
-  const databaseUrl = process.env.NETLIFY_DATABASE_URL;
+  const databaseUrl = process.argv.find((arg) => arg.startsWith('--database-url='))?.split('=')[1];
   
   if (!databaseUrl) {
-    console.error('Error: NETLIFY_DATABASE_URL environment variable is not set');
-    console.error('Please set it before running this script:');
-    console.error('  export NETLIFY_DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require"');
+    console.error('Error: database url is not set');
+    console.error('Please pass it when running this script:');
+    console.error('  node scripts/create-admin-user.js --database-url="postgresql://user:password@host/dbname?sslmode=require"');
     process.exit(1);
   }
 

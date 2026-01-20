@@ -8,13 +8,6 @@ import { YouTubeSection } from "@/components/sections/YouTubeSection";
 import { CommentsSection } from "@/components/sections/CommentsSection";
 import { BackToTop } from "@/components/BackToTop";
 
-// Debug component to check environment variables
-const DebugEnv = () => {
-  console.log('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
-  console.log('VITE_SUPABASE_PUBLISHABLE_KEY exists:', !!import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-  return null;
-};
-
 const Index = () => {
   return (
     <div className="min-h-screen flex flex-col">
