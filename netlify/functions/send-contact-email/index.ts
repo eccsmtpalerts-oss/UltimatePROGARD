@@ -13,7 +13,7 @@ interface ContactFormRequest {
   message: string;
 }
 
-exports.handler = async (event: any) => {
+export const handler = async (event: any) => {
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,

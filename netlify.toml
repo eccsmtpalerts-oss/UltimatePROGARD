@@ -23,3 +23,7 @@
   port = 8888
   publish = "dist"
   functions = "netlify/functions"
+
+[build.environment]
+  SECRETS_SCAN_ENABLED = "true"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY"
