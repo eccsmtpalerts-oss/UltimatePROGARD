@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   FileText,
@@ -55,6 +56,7 @@ import {
 } from "@/lib/security";
 import { detectSourceFromUrl } from "@/lib/product-utils";
 import { plantsAPI } from "@/lib/api-client";
+import { useInfiniteScroll, useLoadMoreTrigger } from "@/hooks/use-infinite-scroll";
 
 // Import existing products and posts data to seed on first load
 import { Product } from "@/components/ProductCard";
@@ -111,9 +113,79 @@ const initialPosts: AdminPost[] = [
 const Admin = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [posts, setPosts] = useState<AdminPost[]>([]);
-  const [plants, setPlants] = useState<any[]>([]);
+  const [plants, setPlants] = useState<{
+    id: string;
+    name: string;
+    region?: string;
+    growing_months?: string;
+    season?: string;
+    soil_requirements?: string;
+    bloom_harvest_time?: string;
+    sunlight_needs?: string;
+    care_instructions?: string;
+    plant_type?: string;
+    image?: string;
+    dataSource?: string;
+    created_at?: string;
+    updated_at?: string;
+  }[]>([]);
+
+  const [productSearch, setProductSearch] = useState("");
+  const [postSearch, setPostSearch] = useState("");
+  const [plantSearch, setPlantSearch] = useState("");
+
+  // Infinite scroll for plants list (10-by-10)
+  const {
+    items: infinitePlants,
+    total: plantsTotal,
+    isLoading: isLoadingPlants,
+    isFetchingNextPage: isFetchingMorePlants,
+    hasNextPage: hasMorePlants,
+    loadMore: loadMorePlants,
+  } = useInfiniteScroll({
+    queryKey: ['admin-plants'],
+    fetchFunction: plantsAPI.getAll,
+    initialLimit: 10,
+    preloadLimit: 5,
+    enabled: true,
+  });
+  const { ref: plantsLoadMoreRef, inView: plantsInView } = useLoadMoreTrigger();
+
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => {
+      const text = `${p.name} ${p.category || ''} ${p.description || ''} ${p.price || ''}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [products, productSearch]);
+
+  const filteredPosts = useMemo(() => {
+    const q = postSearch.trim().toLowerCase();
+    if (!q) return posts;
+    return posts.filter((p) => {
+      const text = `${p.title} ${p.slug} ${p.excerpt || ''} ${p.category || ''} ${p.author || ''}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [posts, postSearch]);
+
+  const filteredPlants = useMemo(() => {
+    const q = plantSearch.trim().toLowerCase();
+    if (!q) return infinitePlants;
+    return infinitePlants.filter((p: any) => {
+      const text = `${p.name} ${p.plant_type || ''} ${p.region || ''} ${p.season || ''}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [infinitePlants, plantSearch]);
+
+  useEffect(() => {
+    if (plantsInView && hasMorePlants && !isFetchingMorePlants) {
+      loadMorePlants();
+    }
+  }, [plantsInView, hasMorePlants, isFetchingMorePlants, loadMorePlants]);
 
   // Check authentication on mount
   useEffect(() => {
@@ -199,51 +271,25 @@ const Admin = () => {
       try {
         // Load products from API
         const storedProducts = await productStorage.getAll();
-        if (storedProducts.length === 0) {
-          // First time: seed with initial data
-          const seededProducts: AdminProduct[] = [];
-          for (const p of initialProducts) {
-            const created = await productStorage.add(p);
-            seededProducts.push(created);
-          }
-          setProducts(seededProducts);
-        } else {
-          setProducts(storedProducts);
-        }
+        setProducts(storedProducts);
 
         // Load posts from API
         const storedPosts = await postStorage.getAll();
-        if (storedPosts.length === 0) {
-          // First time: seed with initial data
-          const seededPosts: AdminPost[] = [];
-          for (const p of initialPosts) {
-            const created = await postStorage.add(p);
-            seededPosts.push(created);
-          }
-          setPosts(seededPosts);
-        } else {
-          setPosts(storedPosts);
-        }
+        setPosts(storedPosts);
 
-        // Load plants from API
-        try {
-          const allPlants = await plantsAPI.getAll();
-          setPlants(allPlants);
-        } catch (error) {
-          console.error('Error loading plants:', error);
-        }
+        // Plants list is now loaded via useInfiniteScroll
       } catch (error) {
         console.error('Error loading data:', error);
         toast({
           title: "Error Loading Data",
-          description: "Failed to load products and posts. Please refresh the page.",
+          description: "Failed to load products and posts. Please check the console for details.",
           variant: "destructive",
         });
       }
     };
 
     loadData();
-  }, []);
+  }, [toast]);
 
   // Product Management Functions
   const handleProductSubmit = async (e: React.FormEvent) => {
@@ -349,11 +395,12 @@ const Admin = () => {
         source: "",
         subCategory: "",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error saving product:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Error Saving Product",
-        description: error.message || "An error occurred while saving the product. Please try again.",
+        description: errorMessage || "An error occurred while saving the product. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -514,34 +561,9 @@ const Admin = () => {
         readTime: "5 min read",
         featured: false,
       });
-    } catch (error: any) {
-      console.error("Error saving post:", error);
+    } catch (error: unknown) {
       
-      // Determine error type for better messaging
-      let errorTitle = "Error Saving Post";
-      let errorMessage = error.message || "An error occurred while saving the post. Please try again.";
-      
-      // Check for specific error types
-      if (error.message?.includes("timeout") || error.message?.includes("Network error")) {
-        errorTitle = "Request Timeout";
-        errorMessage = "The request took too long. Please check if the post was saved and try again if needed.";
-      } else if (error.message?.includes("409") || error.message?.includes("already exists")) {
-        errorTitle = "Duplicate Entry";
-        errorMessage = error.message || "A post with this slug already exists. Please use a different slug.";
-      } else if (error.message?.includes("400") || error.message?.includes("Validation")) {
-        errorTitle = "Validation Error";
-        errorMessage = error.message || "Please check your input and try again.";
-      }
-      
-      toast({
-        title: errorTitle,
-        description: errorMessage,
-        variant: "destructive",
-      });
-      
-      // Do NOT auto-retry on timeout errors - let user decide
-    } finally {
-      setSavingPost(false);
+      // Only refresh list and show success after backend confirms
     }
   };
 
@@ -625,8 +647,7 @@ const Admin = () => {
       if (editingPlantId) {
         // Update existing plant
         await plantsAPI.update(editingPlantId, plantForm);
-        const updatedPlants = await plantsAPI.getAll();
-        setPlants(updatedPlants);
+        await queryClient.invalidateQueries({ queryKey: ['admin-plants'] });
         toast({
           title: "Plant Updated",
           description: "Plant has been successfully updated.",
@@ -638,8 +659,7 @@ const Admin = () => {
           ...plantForm,
           dataSource: 'manual'
         });
-        const updatedPlants = await plantsAPI.getAll();
-        setPlants(updatedPlants);
+        await queryClient.invalidateQueries({ queryKey: ['admin-plants'] });
         toast({
           title: "Plant Added",
           description: "New plant has been added successfully.",
@@ -659,20 +679,22 @@ const Admin = () => {
         image: "",
         plantType: "",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error saving plant:", error);
-      let errorMessage = "An error occurred while saving the plant. Please try again.";
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred while saving the plant. Please try again.';
+      let userErrorMessage = "An error occurred while saving the plant. Please try again.";
       
       // Provide specific error messages
-      if (error.message) {
-        if (error.message.includes("required")) {
-          errorMessage = error.message;
-        } else if (error.message.includes("Network error")) {
-          errorMessage = "Network error: Unable to connect to server. Please check your connection.";
-        } else if (error.message.includes("duplicate") || error.message.includes("already exists")) {
-          errorMessage = "A plant with this name already exists. Please use a different name.";
+      const errorObj = error as Error;
+      if (errorObj.message) {
+        if (errorObj.message.includes("required")) {
+          userErrorMessage = errorObj.message;
+        } else if (errorObj.message.includes("Network error")) {
+          userErrorMessage = "Network error: Unable to connect to server. Please check your connection.";
+        } else if (errorObj.message.includes("duplicate") || errorObj.message.includes("already exists")) {
+          userErrorMessage = "A plant with this name already exists. Please use a different name.";
         } else {
-          errorMessage = error.message;
+          userErrorMessage = errorObj.message;
         }
       }
       
@@ -686,7 +708,52 @@ const Admin = () => {
     }
   };
 
-  const handleEditPlant = (plant: any) => {
+  const handleEditPlant = (plant: {
+    id: string;
+    name?: string;
+    region?: string;
+    growing_months?: string;
+    season?: string;
+    soil_requirements?: string;
+    bloom_harvest_time?: string;
+    sunlight_needs?: string;
+    care_instructions?: string;
+    plant_type?: string;
+    plantType?: string;
+    image?: string;
+    description?: string;
+    careLevel?: string;
+    waterFrequency?: string;
+    sunlight?: string;
+    soilType?: string;
+    temperature?: string;
+    humidity?: string;
+    fertilizer?: string;
+    propagation?: string;
+    pests?: string;
+    diseases?: string;
+    pruning?: string;
+    repotting?: string;
+    companionPlants?: string;
+    toxicToPets?: boolean;
+    bloomTime?: string;
+    maxHeight?: string;
+    maxHeightCm?: number;
+    spread?: string;
+    spreadCm?: number;
+    growthRate?: string;
+    lifespan?: string;
+    origin?: string;
+    family?: string;
+    genus?: string;
+    species?: string;
+    botanicalName?: string;
+    commonNames?: string[];
+    uses?: string[];
+    notes?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }) => {
     setPlantForm({
       name: plant.name || "",
       region: plant.region || "",
@@ -706,18 +773,18 @@ const Admin = () => {
   const handleDeletePlant = async (id: string) => {
     try {
       await plantsAPI.delete(id);
-      const updatedPlants = await plantsAPI.getAll();
-      setPlants(updatedPlants);
+      await queryClient.invalidateQueries({ queryKey: ['admin-plants'] });
       setDeletePlantId(null);
       toast({
         title: "Plant Deleted",
         description: "Plant has been removed successfully.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error deleting plant:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Error",
-        description: error.message || "An error occurred while deleting the plant. Please try again.",
+        description: errorMessage || "An error occurred while deleting the plant. Please try again.",
         variant: "destructive",
       });
     }
@@ -757,7 +824,7 @@ const Admin = () => {
     setImportingPlants(true);
     
     try {
-      let jsonData: any[] = [];
+      let jsonData: Record<string, unknown>[] = [];
 
       if (fileExtension === 'json') {
         // Parse JSON
@@ -821,7 +888,7 @@ const Admin = () => {
       const errors: string[] = [];
 
       for (const row of jsonData) {
-        const normalizedRow: any = {};
+        const normalizedRow: Record<string, unknown> = {};
         Object.keys(row).forEach(key => {
           const normalizedKey = normalizeKey(key);
           normalizedRow[normalizedKey] = row[key];
@@ -851,16 +918,17 @@ const Admin = () => {
 
           await plantsAPI.create(newPlant);
           importedCount++;
-        } catch (rowError: any) {
+        } catch (rowError: unknown) {
           errorCount++;
           const plantName = String(normalizedRow.name || '').trim();
-          errors.push(`Row "${plantName}": ${rowError.message || 'Unknown error'}`);
+          const errorMessage = rowError instanceof Error ? rowError.message : 'Unknown error';
+          errors.push(`Row "${plantName}": ${errorMessage}`);
           // Continue processing other rows
         }
       }
 
       const updatedPlants = await plantsAPI.getAll();
-      setPlants(updatedPlants);
+      setPlants(updatedPlants.data || []);
       
       // Show detailed import results
       const totalProcessed = jsonData.length;
@@ -883,11 +951,12 @@ const Admin = () => {
 
       // Reset file input
       e.target.value = '';
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Plant import error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Import Failed",
-        description: error.message || "An error occurred while importing the file. Please check the file format.",
+        description: errorMessage || "An error occurred while importing the file. Please check the file format.",
         variant: "destructive",
       });
     } finally {
@@ -914,7 +983,7 @@ const Admin = () => {
     
     try {
       const fileData = await file.arrayBuffer();
-      let jsonData: any[] = [];
+      let jsonData: Record<string, unknown>[] = [];
 
       if (fileExtension === 'csv') {
         // Parse CSV
@@ -974,7 +1043,7 @@ const Admin = () => {
           return mappings[normalized] || normalized;
         };
 
-        const normalizedRow: any = {};
+        const normalizedRow: Record<string, unknown> = {};
         Object.keys(row).forEach(key => {
           const normalizedKey = normalizeKey(key);
           normalizedRow[normalizedKey] = row[key];
@@ -1006,10 +1075,11 @@ const Admin = () => {
 
           await productStorage.add(newProduct);
           importedCount++;
-        } catch (rowError: any) {
+        } catch (rowError: unknown) {
           errorCount++;
           const productName = String(normalizedRow.name || '').trim();
-          errors.push(`Row "${productName}": ${rowError.message || 'Unknown error'}`);
+          const errorMessage = rowError instanceof Error ? rowError.message : 'Unknown error';
+          errors.push(`Row "${productName}": ${errorMessage}`);
           // Continue processing other rows
         }
       }
@@ -1038,11 +1108,12 @@ const Admin = () => {
 
       // Reset file input
       e.target.value = '';
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Import error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Import Failed",
-        description: error.message || "An error occurred while importing the file. Please check the file format.",
+        description: errorMessage || "An error occurred while importing the file. Please check the file format.",
         variant: "destructive",
       });
     } finally {
@@ -1307,25 +1378,34 @@ const Admin = () => {
                 {products.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle>All Products ({products.length})</CardTitle>
+                      <CardTitle>All Products ({filteredProducts.length})</CardTitle>
                       <CardDescription>
                         Click on a product to edit or delete it.
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
+                      <div className="mb-4">
+                        <Input
+                          placeholder="Search products (name, category, description, price)..."
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                        />
+                      </div>
                       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {products.map((product) => (
+                        {filteredProducts.map((product) => (
                           <Card key={product.id} className="relative">
                             <CardContent className="p-4">
                               {product.image && (
-                                <img
-                                  src={product.image}
-                                  alt={product.name}
-                                  className="w-full h-48 object-cover rounded-lg mb-3"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
-                                  }}
-                                />
+                                <div className="w-full aspect-[4/3] overflow-hidden rounded-lg mb-3 bg-muted">
+                                  <img
+                                    src={product.image}
+                                    alt={product.name}
+                                    className="w-full h-full object-contain block"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = "none";
+                                    }}
+                                  />
+                                </div>
                               )}
                               <h3 className="font-semibold text-foreground mb-2 line-clamp-2">
                                 {product.name}
@@ -1508,14 +1588,21 @@ const Admin = () => {
                 {posts.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle>All Posts ({posts.length})</CardTitle>
+                      <CardTitle>All Posts ({filteredPosts.length})</CardTitle>
                       <CardDescription>
                         Click on a post to edit or delete it. Posts are automatically available at /blog/[slug].
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
+                      <div className="mb-4">
+                        <Input
+                          placeholder="Search posts (title, slug, category, author)..."
+                          value={postSearch}
+                          onChange={(e) => setPostSearch(e.target.value)}
+                        />
+                      </div>
                       <div className="space-y-4">
-                        {posts.map((post) => (
+                        {filteredPosts.map((post) => (
                           <Card key={post.id} className="relative">
                             <CardContent className="p-4">
                               <div className="flex items-start justify-between gap-4">
@@ -1756,6 +1843,7 @@ const Admin = () => {
                               setPlantForm({ ...plantForm, image: value })
                             }
                             label="Plant Image URL"
+                            maxSizeMB={1}
                           />
                         </div>
                       </div>
@@ -1779,25 +1867,36 @@ const Admin = () => {
                 </Card>
 
                 {/* Plants List */}
-                {plants.length > 0 && (
+                {infinitePlants.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle>All Plants ({plants.length})</CardTitle>
+                      <CardTitle>
+                        All Plants ({filteredPlants.length}{plantsTotal ? ` / ${plantsTotal}` : ''})
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
+                      <div className="mb-4">
+                        <Input
+                          placeholder="Search plants (name, type, region, season)..."
+                          value={plantSearch}
+                          onChange={(e) => setPlantSearch(e.target.value)}
+                        />
+                      </div>
                       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {plants.map((plant) => (
+                        {filteredPlants.map((plant: any) => (
                           <Card key={plant.id}>
                             <CardContent className="p-4">
                               {plant.image && (
-                                <img
-                                  src={plant.image}
-                                  alt={plant.name}
-                                  className="w-full h-48 object-cover rounded-lg mb-3"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
-                                  }}
-                                />
+                                <div className="w-full aspect-[4/3] overflow-hidden rounded-lg mb-3 bg-muted">
+                                  <img
+                                    src={plant.image}
+                                    alt={plant.name}
+                                    className="w-full h-full object-contain block"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = "none";
+                                    }}
+                                  />
+                                </div>
                               )}
                               <h3 className="font-semibold text-foreground mb-2 line-clamp-2">
                                 {plant.name}
@@ -1840,6 +1939,16 @@ const Admin = () => {
                             </CardContent>
                           </Card>
                         ))}
+                      </div>
+
+                      <div className="mt-6">
+                        <div ref={plantsLoadMoreRef} />
+                        {(isLoadingPlants || isFetchingMorePlants) && (
+                          <p className="text-sm text-muted-foreground text-center">Loading more plants...</p>
+                        )}
+                        {!hasMorePlants && plantsTotal > 0 && (
+                          <p className="text-sm text-muted-foreground text-center">All plants loaded.</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

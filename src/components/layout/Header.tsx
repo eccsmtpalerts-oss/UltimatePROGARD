@@ -64,22 +64,11 @@ export function Header() {
               to="/" 
               className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 focus-ring"
             >
-              <div className="flex-shrink-0 flex items-center justify-center mt-1 xs:mt-1.5 sm:mt-2 md:mt-3" style={{ minHeight: "40px", padding: "4px 0", overflow: "visible" }}>
+              <div className="flex-shrink-0 flex items-center justify-center h-10 xs:h-12 sm:h-14 md:h-16 lg:h-16 overflow-hidden">
                 <img 
                   src="/images/Avtar.png" 
                   alt="Perfect Gardener Logo" 
-                  className="w-16 h-16 xs:w-20 xs:h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 xl:w-36 xl:h-36 object-contain object-center transition-transform duration-300"
-                  style={{ 
-                    width: "auto",
-                    height: "auto",
-                    maxWidth: "60px",
-                    maxHeight: "60px",
-                    objectFit: "contain",
-                    objectPosition: "center",
-                    display: "block",
-                    paddingBottom: "4px",
-                    
-                  }}
+                  className="h-full w-auto max-w-[72px] xs:max-w-[80px] sm:max-w-[96px] object-contain object-center transition-transform duration-300"
                   onError={(e) => {
                     // Fallback to icon if image fails
                     const target = e.target as HTMLImageElement;

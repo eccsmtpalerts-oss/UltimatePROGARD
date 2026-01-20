@@ -4,7 +4,7 @@
  * Uses randomized intervals to mimic human usage patterns
  */
 
-import { queryDb } from './utils/db.js';
+/**import { queryDb } from './utils/db.js';
 
 export const handler = async (event) => {
   // Only allow GET requests
@@ -55,4 +55,4 @@ export const handler = async (event) => {
       })
     };
   }
-};
+};**/

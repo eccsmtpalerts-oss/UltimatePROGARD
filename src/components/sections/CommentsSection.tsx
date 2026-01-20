@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Star, Send, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { commentsAPI } from "@/lib/api-client";
 
 interface Comment {
   id: string;
@@ -22,52 +23,88 @@ interface Comment {
   date: string;
 }
 
-const sampleComments: Comment[] = [
-  {
-    id: "1",
-    name: "Priya Sharma",
-    rating: 5,
-    text: "Amazing tips for beginners! My garden has never looked better.",
-    date: "2024-12-15",
-  },
-  {
-    id: "2",
-    name: "Rahul Verma",
-    rating: 4,
-    text: "Great product recommendations. The grow bags are excellent quality.",
-    date: "2024-12-10",
-  },
-];
-
 export function CommentsSection() {
-  const [comments, setComments] = useState<Comment[]>(sampleComments);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rating, setRating] = useState("5");
   const { toast } = useToast();
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const rows = await commentsAPI.getHomeLatest(3);
+        if (!mounted) return;
+
+        setComments(
+          rows.map((r) => ({
+            id: r.id,
+            name: r.author_name,
+            rating: r.rating || 5,
+            text: r.content,
+            date: new Date(r.created_at).toISOString().split("T")[0],
+          }))
+        );
+      } catch (error) {
+        console.error('❌ Failed to load home comments:', error);
+      }
+    };
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     const formData = new FormData(e.currentTarget);
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      name: formData.get("name") as string,
-      rating: parseInt(formData.get("rating") as string) || 5,
-      text: formData.get("comment") as string,
-      date: new Date().toISOString().split("T")[0],
-    };
+    try {
+      const name = (formData.get("name") as string) || "";
+      const email = (formData.get("email") as string) || "";
+      const phone = (formData.get("phone") as string) || "";
+      const text = (formData.get("comment") as string) || "";
 
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 500));
+      await commentsAPI.createHomeComment({
+        authorName: name,
+        authorEmail: email || undefined,
+        authorPhone: phone || undefined,
+        rating: Number(rating) || 5,
+        content: text,
+      });
 
-    setComments((prev) => [newComment, ...prev]);
-    setIsSubmitting(false);
-    (e.target as HTMLFormElement).reset();
+      const rows = await commentsAPI.getHomeLatest(3);
+      setComments(
+        rows.map((r) => ({
+          id: r.id,
+          name: r.author_name,
+          rating: r.rating || 5,
+          text: r.content,
+          date: new Date(r.created_at).toISOString().split("T")[0],
+        }))
+      );
 
-    toast({
-      title: "Comment submitted!",
-      description: "Thank you for your feedback.",
-    });
+      (e.target as HTMLFormElement).reset();
+      setRating("5");
+
+      toast({
+        title: "Comment submitted!",
+        description: "Thank you for your feedback.",
+      });
+    } catch (error: unknown) {
+      console.error('❌ Failed to submit home comment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit comment.';
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const renderStars = (rating: number) => {
@@ -85,7 +122,7 @@ export function CommentsSection() {
   return (
     <section className="py-12 md:py-16 bg-green-50/30">
       <div className="section-container">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           {/* Intro Text */}
           <div className="text-center mb-8">
             <p className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
@@ -98,7 +135,7 @@ export function CommentsSection() {
           </h2>
 
           {/* Comment Form */}
-          <form onSubmit={handleSubmit} className="space-y-4 mb-12 p-6 bg-card rounded-xl border border-border">
+          <form onSubmit={handleSubmit} className="space-y-4 mb-12 p-6 bg-card rounded-xl border border-border w-full">
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
@@ -135,7 +172,7 @@ export function CommentsSection() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rating">Rating</Label>
-                <Select name="rating" defaultValue="5">
+                <Select value={rating} onValueChange={setRating}>
                   <SelectTrigger id="rating" className="focus-ring">
                     <SelectValue placeholder="Select rating" />
                   </SelectTrigger>
@@ -175,7 +212,7 @@ export function CommentsSection() {
           </form>
 
           {/* Comments List */}
-          <div className="space-y-4">
+          <div className="space-y-4 w-full">
             {comments.map((comment) => (
               <article
                 key={comment.id}

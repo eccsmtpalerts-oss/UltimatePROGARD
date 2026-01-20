@@ -1,87 +1,94 @@
 /**
  * Database Connection Utility
- * Shared utility for connecting to Neon PostgreSQL database
- * Optimized for serverless with connection pooling and keep-alive
+ * Shared utility for connecting to Supabase PostgreSQL database
+ * Optimized for serverless with Supabase client
  */
 
-import pg from 'pg';
-const { Pool } = pg;
+import { createClient } from '@supabase/supabase-js';
 
-// Connection pool for better performance
-let pool = null;
+// Supabase client for server-side operations
+let supabase = null;
 
 /**
- * Get database pool (creates if doesn't exist)
- * Uses connection pooling to reduce connection overhead
+ * Get Supabase client (creates if doesn't exist)
+ * Uses service role key for full access
  */
-function getDbPool() {
-  if (!pool) {
-    const databaseUrl = process.env.NETLIFY_DATABASE_URL;
+function getSupabaseClient() {
+  if (!supabase) {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!databaseUrl) {
-      throw new Error('NETLIFY_DATABASE_URL environment variable is not set');
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables are required');
     }
 
-    // Parse connection string for pool config
-    const url = new URL(databaseUrl);
-
-    pool = new Pool({
-      host: url.hostname,
-      port: parseInt(url.port || '5432'),
-      database: url.pathname.slice(1),
-      user: url.username,
-      password: url.password,
-      ssl: {
-        rejectUnauthorized: false
-      },
-      // Pool configuration for serverless
-      max: 5, // Maximum 5 connections
-      min: 0, // Minimum 0 connections
-      idleTimeoutMillis: 30000, // Close idle connections after 30s
-      connectionTimeoutMillis: 5000, // Connection timeout 5s
-      acquireTimeoutMillis: 10000, // Acquire timeout 10s
-    });
-
-    // Handle pool errors
-    pool.on('error', (err) => {
-      console.error('Unexpected error on idle client', err);
+    supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     });
   }
 
-  return pool;
+  return supabase;
 }
 
 /**
- * Execute a database query with connection pooling
- * @param {string} text - SQL query
- * @param {Array} params - Query parameters
- * @param {Object} options - Query options { isWrite: boolean, logSlow: boolean, cacheSeconds: number }
+ * Execute a database query using Supabase client
+ * @param {string} table - Table name
+ * @param {Object} options - Query options { select, filters, limit, offset, orderBy, isWrite }
  */
-async function queryDb(text, params = [], options = {}) {
-  const { isWrite = false, logSlow = true, cacheSeconds = 0 } = options;
-  const pool = getDbPool();
-  const startTime = Date.now();
+async function querySupabase(table, options = {}) {
+  const { select = '*', filters = {}, limit, offset, orderBy, isWrite = false } = options;
+  const client = getSupabaseClient();
 
-  const client = await pool.connect();
+  let query = client.from(table).select(select);
 
-  try {
-    const result = await client.query(text, params);
-
-    // Log slow queries for monitoring
-    const duration = Date.now() - startTime;
-    if (logSlow && duration > 1000) {
-      console.warn(`Slow query detected (${duration}ms):`, text.substring(0, 100));
+  // Apply filters
+  Object.entries(filters).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      query = query.in(key, value);
+    } else {
+      query = query.eq(key, value);
     }
+  });
 
-    return result;
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`Database query error (${duration}ms):`, error.message, text.substring(0, 100));
-    throw error;
-  } finally {
-    // Return client to pool
-    client.release();
+  // Apply ordering
+  if (orderBy) {
+    query = query.order(orderBy.column, { ascending: orderBy.ascending !== false });
   }
+
+  // Apply pagination
+  if (limit) {
+    query = query.limit(limit);
+  }
+  if (offset) {
+    query = query.range(offset, offset + (limit || 1000) - 1);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Supabase query error:', error);
+    throw error;
+  }
+
+  return { rows: data || [] };
+}
+
+/**
+ * Execute raw SQL query (for complex queries not supported by Supabase client)
+ * @param {string} sql - SQL query
+ * @param {Array} params - Query parameters
+ */
+async function queryRaw(sql, params = []) {
+  // For raw SQL, we still need pg, but connect to Supabase DB
+  // This is a fallback for complex queries
+  const client = getSupabaseClient();
+  
+  // Supabase doesn't support raw SQL directly, so we use rpc if possible
+  // For now, throw error and convert to client queries
+  throw new Error('Raw SQL queries need to be converted to Supabase client queries');
 }
 
 /**
@@ -106,6 +113,8 @@ function createResponse(statusCode, body, headers = {}) {
 }
 
 export {
-  queryDb,
+  getSupabaseClient,
+  querySupabase,
+  queryRaw,
   createResponse
 };

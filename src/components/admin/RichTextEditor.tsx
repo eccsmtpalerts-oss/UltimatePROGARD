@@ -4,7 +4,7 @@ import "react-quill/dist/quill.snow.css";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { Undo2, Redo2, Minus, Code, Image as ImageIcon, Youtube } from "lucide-react";
+import { Undo2, Redo2, Minus, Code, Paperclip, Youtube } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,13 +24,73 @@ interface RichTextEditorProps {
   className?: string;
 }
 
+const FONT_WHITELIST = [
+  'sans',
+  'serif',
+  'mono',
+  'arial',
+  'times',
+  'georgia',
+  'courier',
+];
+
 // Register table module (if available)
 let Table = null;
 try {
   // Try to use quill-table if available, otherwise use custom implementation
   Table = Quill.import('modules/table');
-} catch {
+  console.log('✅ Quill table module loaded successfully');
+} catch (error) {
   // Table module not available, we'll use custom handler
+  console.log('⚠️ Quill table module not available, using custom handler:', error);
+}
+
+// Register additional formats (font whitelist + file card embed)
+try {
+  const Font = Quill.import('formats/font');
+  Font.whitelist = FONT_WHITELIST;
+  Quill.register(Font, true);
+
+  const BlockEmbed = Quill.import('blots/block/embed');
+
+  class FileCardBlot extends BlockEmbed {
+    static blotName = 'file-card';
+    static tagName = 'div';
+
+    static create(value: { url: string; name?: string; size?: string }) {
+      const node = super.create() as HTMLDivElement;
+      node.className = 'pg-file-card';
+      node.setAttribute('contenteditable', 'false');
+
+      const safeName = (value?.name || 'Download file').toString();
+      const safeSize = value?.size ? ` • ${value.size}` : '';
+
+      node.innerHTML = `
+        <a href="${value.url}" target="_blank" rel="noopener noreferrer" class="pg-file-card__link">
+          <span class="pg-file-card__name">${safeName}</span>
+          <span class="pg-file-card__meta">${safeSize}</span>
+          <span class="pg-file-card__cta">Download</span>
+        </a>
+      `.trim();
+
+      return node;
+    }
+
+    static value(node: HTMLElement) {
+      const link = node.querySelector('a') as HTMLAnchorElement | null;
+      const name = (node.querySelector('.pg-file-card__name') as HTMLElement | null)?.textContent || '';
+      const meta = (node.querySelector('.pg-file-card__meta') as HTMLElement | null)?.textContent || '';
+      return {
+        url: link?.getAttribute('href') || '',
+        name,
+        size: meta.replace(/^\s*•\s*/, ''),
+      };
+    }
+  }
+
+  Quill.register(FileCardBlot, true);
+} catch (e) {
+  console.warn('⚠️ Quill additional formats registration failed:', e);
 }
 
 /**
@@ -48,9 +108,12 @@ export function RichTextEditor({
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [showEmbedDialog, setShowEmbedDialog] = useState(false);
   const [showCodeDialog, setShowCodeDialog] = useState(false);
-  const [imageData, setImageData] = useState({ url: "", alt: "", width: "", alignment: "left" });
+  const [showFileDialog, setShowFileDialog] = useState(false);
+  const [imageData, setImageData] = useState({ url: "", alt: "", width: "", alignment: "left", layout: "block" });
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [embedData, setEmbedData] = useState({ url: "", type: "youtube" });
   const [codeData, setCodeData] = useState({ code: "", language: "javascript" });
+  const [fileData, setFileData] = useState({ url: "", name: "", size: "" });
 
   // Calculate word and character count
   useEffect(() => {
@@ -63,7 +126,38 @@ export function RichTextEditor({
   // Enhanced image handler with preview, alt text, resize, and alignment
   const imageHandler = useMemo(() => {
     return function () {
-      setImageData({ url: "", alt: "", width: "", alignment: "left" });
+      const quill = quillRef.current?.getEditor();
+      const range = quill?.getSelection(true);
+      if (quill && range) {
+        const [leaf] = quill.getLeaf(range.index);
+        const domNode = (leaf as any)?.domNode as HTMLElement | undefined;
+        if (domNode && domNode.tagName === 'IMG') {
+          const img = domNode as HTMLImageElement;
+          const style = (img.getAttribute('style') || '').toLowerCase();
+          const src = img.getAttribute('src') || '';
+          const alt = img.getAttribute('alt') || '';
+
+          const maxWidthMatch = style.match(/max-width:\s*(\d+)px/);
+          const width = maxWidthMatch?.[1] || '';
+
+          let layout: "block" | "inline" | "wrap-left" | "wrap-right" = 'block';
+          if (style.includes('float: left')) layout = 'wrap-left';
+          if (style.includes('float: right')) layout = 'wrap-right';
+          if (style.includes('display: inline')) layout = 'inline';
+
+          let alignment: "left" | "center" | "right" = 'left';
+          if (style.includes('margin-left: auto') && style.includes('margin-right: auto')) alignment = 'center';
+          else if (style.includes('margin-left: auto') && style.includes('margin-right: 0')) alignment = 'right';
+
+          setSelectedImageIndex(range.index);
+          setImageData({ url: src, alt, width, alignment, layout });
+          setShowImageDialog(true);
+          return;
+        }
+      }
+
+      setSelectedImageIndex(null);
+      setImageData({ url: "", alt: "", width: "", alignment: "left", layout: "block" });
       setShowImageDialog(true);
     };
   }, []);
@@ -86,30 +180,71 @@ export function RichTextEditor({
       styleParts.push(`max-width: 100%`);
     }
     
-    // Add alignment
-    let alignmentStyle = "";
-    if (imageData.alignment === "center") {
-      alignmentStyle = `display: block; margin-left: auto; margin-right: auto;`;
-    } else if (imageData.alignment === "right") {
-      alignmentStyle = `display: block; margin-left: auto; margin-right: 0;`;
+    // Layout / wrapping
+    if (imageData.layout === "inline") {
+      styleParts.push(`display: inline; vertical-align: baseline; margin: 0 .25rem;`);
+    } else if (imageData.layout === "wrap-left") {
+      styleParts.push(`float: left; margin: 0.75rem 1rem 0.75rem 0; display: block;`);
+    } else if (imageData.layout === "wrap-right") {
+      styleParts.push(`float: right; margin: 0.75rem 0 0.75rem 1rem; display: block;`);
     } else {
-      alignmentStyle = `display: block; margin-left: 0; margin-right: auto;`;
+      // block
+      let alignmentStyle = "";
+      if (imageData.alignment === "center") {
+        alignmentStyle = `display: block; margin-left: auto; margin-right: auto;`;
+      } else if (imageData.alignment === "right") {
+        alignmentStyle = `display: block; margin-left: auto; margin-right: 0;`;
+      } else {
+        alignmentStyle = `display: block; margin-left: 0; margin-right: auto;`;
+      }
+      styleParts.push(alignmentStyle);
+      styleParts.push(`margin-top: 1rem`);
+      styleParts.push(`margin-bottom: 1rem`);
     }
-    
-    styleParts.push(alignmentStyle);
+
     styleParts.push(`height: auto`);
-    styleParts.push(`margin-top: 1rem`);
-    styleParts.push(`margin-bottom: 1rem`);
 
     const style = styleParts.join("; ");
     
     // Create image with alt text, width, and alignment
     const imgHtml = `<img src="${imageData.url}" alt="${imageData.alt || ''}" style="${style}" />`;
 
-    quill.clipboard.dangerouslyPasteHTML(range.index, imgHtml);
-    quill.setSelection(range.index + 1);
+    if (selectedImageIndex !== null) {
+      quill.deleteText(selectedImageIndex, 1, 'user');
+      quill.clipboard.dangerouslyPasteHTML(selectedImageIndex, imgHtml);
+      quill.setSelection(selectedImageIndex + 1);
+    } else {
+      quill.clipboard.dangerouslyPasteHTML(range.index, imgHtml);
+      quill.setSelection(range.index + 1);
+    }
     setShowImageDialog(false);
-    setImageData({ url: "", alt: "", width: "", alignment: "left" });
+    setSelectedImageIndex(null);
+    setImageData({ url: "", alt: "", width: "", alignment: "left", layout: "block" });
+  };
+
+  const fileHandler = useMemo(() => {
+    return function () {
+      setFileData({ url: "", name: "", size: "" });
+      setShowFileDialog(true);
+    };
+  }, []);
+
+  const handleFileInsert = () => {
+    const quill = quillRef.current?.getEditor();
+    if (!quill || !fileData.url) return;
+
+    const range = quill.getSelection(true);
+    if (!range) return;
+
+    quill.insertEmbed(
+      range.index,
+      'file-card',
+      { url: fileData.url, name: fileData.name || 'Download file', size: fileData.size },
+      'user'
+    );
+    quill.setSelection(range.index + 1);
+    setShowFileDialog(false);
+    setFileData({ url: "", name: "", size: "" });
   };
 
   // Enhanced video/embed handler
@@ -287,8 +422,10 @@ export function RichTextEditor({
   const modules = useMemo(() => ({
     toolbar: {
       container: [
+        [{ font: [] }],
         [{ header: [1, 2, 3, 4, false] }], // Headings H1-H4 with false for normal text
         ["bold", "italic", "underline", "strike"], // Text formatting
+        [{ script: "sub" }, { script: "super" }],
         [{ align: [] }], // Alignment
         [{ list: "ordered" }, { list: "bullet" }], // Lists
         ["blockquote", "code-block"], // Block elements
@@ -312,11 +449,13 @@ export function RichTextEditor({
   }), [imageHandler, videoHandler]);
 
   const formats = useMemo(() => [
+    "font",
     "header",
     "bold",
     "italic",
     "underline",
     "strike",
+    "script",
     "align",
     "list",
     "bullet",
@@ -325,6 +464,7 @@ export function RichTextEditor({
     "link",
     "image",
     "video",
+    "file-card",
     "color",
     "background",
     "width", // For image width
@@ -335,8 +475,12 @@ export function RichTextEditor({
     <TooltipProvider>
       <div className={cn("rich-text-editor-wrapper", className)}>
         <style>{`
+          .rich-text-editor-wrapper .pg-editor-topbar {
+            position: sticky;
+            top: 80px;
+            z-index: 20;
+          }
           .rich-text-editor-wrapper .ql-container {
-            font-family: inherit;
             font-size: 14px;
             min-height: 300px;
             border-bottom-left-radius: 8px;
@@ -346,15 +490,45 @@ export function RichTextEditor({
           }
           .rich-text-editor-wrapper .ql-editor {
             min-height: 300px;
+            font-family: inherit;
           }
           .rich-text-editor-wrapper .ql-toolbar {
             position: sticky;
-            top: 0;
-            z-index: 10;
+            top: 124px;
+            z-index: 15;
             border-top-left-radius: 8px;
             border-top-right-radius: 8px;
             background: hsl(var(--muted));
             border-color: hsl(var(--border));
+          }
+
+          /* Make the font dropdown readable (Quill needs label mappings) */
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label::before,
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item::before {
+            content: attr(data-value);
+          }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="sans"]::before { content: "Sans"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="sans"]::before { content: "Sans"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="serif"]::before { content: "Serif"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="serif"]::before { content: "Serif"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="mono"]::before { content: "Mono"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="mono"]::before { content: "Mono"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="arial"]::before { content: "Arial"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="arial"]::before { content: "Arial"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="times"]::before { content: "Times"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="times"]::before { content: "Times"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="georgia"]::before { content: "Georgia"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="georgia"]::before { content: "Georgia"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-label[data-value="courier"]::before { content: "Courier"; }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker.ql-font .ql-picker-item[data-value="courier"]::before { content: "Courier"; }
+
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker-options {
+            background: hsl(var(--popover));
+            border-color: hsl(var(--border));
+          }
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker-item,
+          .rich-text-editor-wrapper .ql-toolbar .ql-picker-label {
+            color: hsl(var(--foreground));
           }
           .rich-text-editor-wrapper .ql-toolbar .ql-stroke {
             stroke: hsl(var(--foreground));
@@ -405,6 +579,50 @@ export function RichTextEditor({
             margin-left: auto !important;
             margin-right: 0 !important;
           }
+
+          .rich-text-editor-wrapper .ql-font-sans { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+          .rich-text-editor-wrapper .ql-font-serif { font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif; }
+          .rich-text-editor-wrapper .ql-font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+          .rich-text-editor-wrapper .ql-font-arial { font-family: Arial, Helvetica, sans-serif; }
+          .rich-text-editor-wrapper .ql-font-times { font-family: "Times New Roman", Times, serif; }
+          .rich-text-editor-wrapper .ql-font-georgia { font-family: Georgia, serif; }
+          .rich-text-editor-wrapper .ql-font-courier { font-family: "Courier New", Courier, monospace; }
+
+          .rich-text-editor-wrapper .pg-file-card {
+            margin: 0.75rem 0;
+            padding: 0.75rem;
+            border: 1px solid hsl(var(--border));
+            border-radius: 10px;
+            background: hsl(var(--muted));
+          }
+          .rich-text-editor-wrapper .pg-file-card__link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: hsl(var(--foreground));
+          }
+          .rich-text-editor-wrapper .pg-file-card__name {
+            font-weight: 600;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .rich-text-editor-wrapper .pg-file-card__meta {
+            color: hsl(var(--muted-foreground));
+            font-size: 12px;
+            white-space: nowrap;
+          }
+          .rich-text-editor-wrapper .pg-file-card__cta {
+            font-size: 12px;
+            padding: 0.25rem 0.5rem;
+            border-radius: 999px;
+            border: 1px solid hsl(var(--border));
+            background: hsl(var(--background));
+            white-space: nowrap;
+          }
           /* Ensure headings work correctly */
           .rich-text-editor-wrapper .ql-editor h1,
           .rich-text-editor-wrapper .ql-editor h2,
@@ -422,7 +640,7 @@ export function RichTextEditor({
         `}</style>
         
         {/* Enhanced Toolbar with Custom Buttons */}
-        <div className="flex items-center justify-between border-b border-border bg-muted/50 p-2 rounded-t-lg">
+        <div className="pg-editor-topbar flex items-center justify-between border-b border-border bg-background/90 backdrop-blur-md p-2 rounded-t-lg shadow-sm">
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -510,6 +728,21 @@ export function RichTextEditor({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Insert YouTube/Embed</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={fileHandler}
+                  className="h-8 px-2"
+                >
+                  <Paperclip className="h-4 w-4 mr-1" />
+                  File
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Attach a file (PDF/ZIP/etc)</TooltipContent>
             </Tooltip>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -617,6 +850,23 @@ export function RichTextEditor({
                   </Select>
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="image-layout">Layout</Label>
+                <Select
+                  value={imageData.layout}
+                  onValueChange={(value) => setImageData({ ...imageData, layout: value })}
+                >
+                  <SelectTrigger id="image-layout">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="block">Block</SelectItem>
+                    <SelectItem value="inline">In line with text</SelectItem>
+                    <SelectItem value="wrap-left">Wrap text (float left)</SelectItem>
+                    <SelectItem value="wrap-right">Wrap text (float right)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {imageData.url && (
                 <div className="mt-4">
                   <Label>Preview:</Label>
@@ -640,6 +890,90 @@ export function RichTextEditor({
                 disabled={!imageData.url || !imageData.alt}
               >
                 Insert Image
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* File Dialog */}
+        <Dialog open={showFileDialog} onOpenChange={setShowFileDialog}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Attach File</DialogTitle>
+              <DialogDescription>
+                Upload a file (PDF/ZIP/etc) or paste a URL. Uploaded files are embedded as a downloadable card.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 max-h-[calc(90vh-200px)] overflow-y-auto pr-2">
+              <div className="space-y-2">
+                <Label htmlFor="file-upload">Upload File from Computer</Label>
+                <Input
+                  id="file-upload"
+                  type="file"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    // Safety: keep embedded payloads small; larger files should be stored and linked.
+                    if (file.size > 1 * 1024 * 1024) {
+                      alert('File too large to embed. Please upload it to storage and paste its URL, or select a smaller file (<= 1MB).');
+                      return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const dataUrl = event.target?.result as string;
+                      setFileData({
+                        url: dataUrl,
+                        name: file.name,
+                        size: `${Math.ceil(file.size / 1024)} KB`,
+                      });
+                    };
+                    reader.onerror = () => {
+                      alert('Error reading file');
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="cursor-pointer"
+                />
+                <p className="text-xs text-muted-foreground">Or enter URL below</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="file-url">File URL *</Label>
+                <Input
+                  id="file-url"
+                  value={fileData.url}
+                  onChange={(e) => setFileData({ ...fileData, url: e.target.value })}
+                  placeholder="https://example.com/file.pdf"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="file-name">Display name</Label>
+                  <Input
+                    id="file-name"
+                    value={fileData.name}
+                    onChange={(e) => setFileData({ ...fileData, name: e.target.value })}
+                    placeholder="e.g. Planting Guide (PDF)"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="file-size">Size (optional)</Label>
+                  <Input
+                    id="file-size"
+                    value={fileData.size}
+                    onChange={(e) => setFileData({ ...fileData, size: e.target.value })}
+                    placeholder="e.g. 320 KB"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowFileDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleFileInsert} disabled={!fileData.url}>
+                Insert File Card
               </Button>
             </DialogFooter>
           </DialogContent>

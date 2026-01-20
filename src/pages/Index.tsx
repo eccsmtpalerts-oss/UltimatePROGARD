@@ -3,9 +3,17 @@ import { Footer } from "@/components/layout/Footer";
 import { HeroSection } from "@/components/sections/HeroSection";
 import { ProductsSection } from "@/components/sections/ProductsSection";
 import { PostsSection } from "@/components/sections/PostsSection";
+import { ToolsSection } from "@/components/sections/ToolsSection";
 import { YouTubeSection } from "@/components/sections/YouTubeSection";
 import { CommentsSection } from "@/components/sections/CommentsSection";
 import { BackToTop } from "@/components/BackToTop";
+
+// Debug component to check environment variables
+const DebugEnv = () => {
+  console.log('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
+  console.log('VITE_SUPABASE_PUBLISHABLE_KEY exists:', !!import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+  return null;
+};
 
 const Index = () => {
   return (
@@ -75,6 +83,7 @@ const Index = () => {
         <HeroSection />
         <ProductsSection limit={5} />
         <PostsSection limit={3} />
+        <ToolsSection />
         <YouTubeSection />
         <CommentsSection />
       </main>

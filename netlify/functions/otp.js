@@ -1,4 +1,4 @@
-import { queryDb, createResponse } from './utils/db.js';
+import { createResponse } from './utils/db.js';
 
 // In-memory OTP storage (for development)
 // In production, consider using Redis or database table

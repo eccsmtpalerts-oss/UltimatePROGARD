@@ -50,9 +50,24 @@ let postsCache: AdminPost[] | null = null;
 export const productStorage = {
   getAll: async (): Promise<AdminProduct[]> => {
     try {
+      console.log('🔍 Product Storage: Fetching products...');
       const response = await productsAPI.getAll(1, 1000); // Get all for admin use
+      console.log('📦 Product Storage Response:', response);
+      
       // Normalize products to match AdminProduct interface
-      const normalized = response.products.map((p: any) => ({
+      const normalized = (response.data || []).map((p: {
+        id: string;
+        name: string;
+        price: string;
+        image?: string;
+        images?: string[];
+        link?: string;
+        category?: string;
+        description?: string;
+        source?: string;
+        sub_category?: string;
+        subCategory?: string;
+      }) => ({
         id: p.id,
         name: p.name,
         price: p.price,
@@ -64,10 +79,12 @@ export const productStorage = {
         source: p.source,
         subCategory: p.subCategory || p.sub_category,
       }));
+      
+      console.log('✅ Product Storage Normalized:', normalized);
       productsCache = normalized;
       return normalized;
     } catch (error) {
-      console.error('Failed to fetch products:', error);
+      console.error('❌ Failed to fetch products:', error);
       // Return cache if available, otherwise empty array
       return productsCache || [];
     }
@@ -157,7 +174,19 @@ export const postStorage = {
     try {
       const response = await postsAPI.getAll(1, 1000); // Get all for admin use
       // Normalize posts to match AdminPost interface
-      const normalized = response.posts.map((p: any) => ({
+      const normalized = (response.data || []).map((p: {
+        id: string;
+        title: string;
+        slug: string;
+        excerpt: string;
+        content: string;
+        date?: string;
+        read_time?: string;
+        category?: string;
+        author?: string;
+        image?: string;
+        featured?: boolean;
+      }) => ({
         id: p.id,
         title: p.title,
         slug: p.slug,

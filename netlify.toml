@@ -12,13 +12,14 @@
 [functions]
   directory = "netlify/functions"
 
-
 [[scheduled_functions]]
   function = "keep-alive"
   cron = "0 */2 * * *"
 
-
 [dev]
+  framework = "#static"
   command = "npm run dev"
   targetPort = 8081
   port = 8888
+  publish = "dist"
+  functions = "netlify/functions"

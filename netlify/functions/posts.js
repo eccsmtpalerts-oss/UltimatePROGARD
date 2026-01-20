@@ -1,4 +1,4 @@
-import { queryDb, createResponse } from './utils/db.js';
+import { querySupabase, getSupabaseClient, createResponse } from './utils/db.js';
 
 export const handler = async (event) => {
   // Handle CORS preflight
@@ -15,13 +15,10 @@ export const handler = async (event) => {
       if (path && path !== '/') {
         // Get single post by slug - uses indexed slug column
         const slug = path.replace('/', '');
-        const result = await queryDb(
-          `SELECT id, title, slug, excerpt, content, date, read_time, category, author, image, featured, created_at, updated_at 
-           FROM posts 
-           WHERE slug = $1`,
-          [slug],
-          { isWrite: false, logSlow: false }
-        );
+        const result = await querySupabase('posts', {
+          select: 'id, title, slug, excerpt, content, date, read_time, category, author, image, featured, created_at, updated_at',
+          filters: { slug }
+        });
 
         if (result.rows.length === 0) {
           return createResponse(404, { error: 'Post not found' });
@@ -35,23 +32,21 @@ export const handler = async (event) => {
         const limit = Math.min(parseInt(queryParams.limit) || 6, 20); // Max 20 per page
         const offset = (page - 1) * limit;
 
-        const result = await queryDb(
-          `SELECT id, title, slug, excerpt, date, read_time, category, author, image, featured, created_at
-           FROM posts
-           ORDER BY created_at DESC
-           LIMIT $1 OFFSET $2`,
-          [limit, offset],
-          { isWrite: false, logSlow: true }
-        );
+        const result = await querySupabase('posts', {
+          select: 'id, title, slug, excerpt, date, read_time, category, author, image, featured, created_at',
+          orderBy: { column: 'created_at', ascending: false },
+          limit,
+          offset
+        });
 
         // Get total count for pagination
-        const countResult = await queryDb(
-          'SELECT COUNT(*) as total FROM posts',
-          [],
-          { logSlow: false }
-        );
+        const { count, error: countError } = await getSupabaseClient()
+          .from('posts')
+          .select('*', { count: 'exact', head: true });
 
-        const total = parseInt(countResult.rows[0].total);
+        if (countError) throw countError;
+
+        const total = count;
         const totalPages = Math.ceil(total / limit);
 
         return createResponse(200, {
@@ -98,43 +93,38 @@ export const handler = async (event) => {
 
       // Normalize slug (trim and lowercase)
       const normalizedSlug = slug.trim().toLowerCase();
-      
-      // Check if slug already exists (case-insensitive) - optimized query
-      const existing = await queryDb(
-        'SELECT id FROM posts WHERE LOWER(TRIM(slug)) = $1 LIMIT 1',
-        [normalizedSlug],
-        { isWrite: false, logSlow: false }
-      );
-      if (existing.rows.length > 0) {
-        return createResponse(409, { 
-          error: 'A post with this slug already exists. Please use a different slug.',
-          duplicateField: 'slug'
+
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from('posts')
+          .insert({
+            title: title.trim(),
+            slug: normalizedSlug,
+            excerpt: excerpt ? excerpt.trim() : null,
+            content,
+            date: date || new Date().toISOString().split('T')[0],
+            read_time: readTime || null,
+            category: category ? category.trim() : null,
+            author: author || 'Perfect Gardener',
+            image: image || null,
+            featured: featured || false
+          })
+          .select('id, title, slug, excerpt, content, date, read_time, category, author, image, featured, created_at, updated_at')
+          .single();
+
+        if (error) {
+          console.error('Supabase error:', error);
+          return createResponse(500, { error: 'Database error', details: error.message });
+        }
+
+        return createResponse(201, {
+          success: true,
+          post: data
         });
+      } catch (err) {
+        console.error('Function error:', err);
+        return createResponse(500, { error: 'Server error', details: err.message });
       }
-
-      const result = await queryDb(
-        `INSERT INTO posts (title, slug, excerpt, content, date, read_time, category, author, image, featured) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
-         RETURNING id, title, slug, excerpt, content, date, read_time, category, author, image, featured, created_at, updated_at`,
-        [
-          title.trim(),
-          normalizedSlug,
-          excerpt ? excerpt.trim() : null,
-          content,
-          date || new Date().toISOString().split('T')[0],
-          readTime || null,
-          category ? category.trim() : null,
-          author || 'Perfect Gardener',
-          image || null,
-          featured || false
-        ],
-        { isWrite: true, logSlow: true }
-      );
-
-      return createResponse(201, {
-        success: true,
-        post: result.rows[0]
-      });
     }
 
     // PUT /posts/:id - Update post
@@ -199,45 +189,38 @@ export const handler = async (event) => {
       }
 
       // Update using indexed id column (fast)
-      const result = await queryDb(
-        `UPDATE posts 
-         SET title = COALESCE($1, title),
-             slug = COALESCE($2, slug),
-             excerpt = COALESCE($3, excerpt),
-             content = COALESCE($4, content),
-             date = COALESCE($5, date),
-             read_time = COALESCE($6, read_time),
-             category = COALESCE($7, category),
-             author = COALESCE($8, author),
-             image = COALESCE($9, image),
-             featured = COALESCE($10, featured),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $11
-         RETURNING id, title, slug, excerpt, content, date, read_time, category, author, image, featured, created_at, updated_at`,
-        [
-          title || null,
-          slug || null,
-          excerpt !== undefined ? excerpt : null,
-          content || null,
-          date || null,
-          readTime || null,
-          category !== undefined ? category : null,
-          author || null,
-          image !== undefined ? image : null,
-          featured !== undefined ? featured : null,
-          id
-        ],
-        { isWrite: true, logSlow: true }
-      );
+      const updateData = {};
+      if (title !== undefined) updateData.title = title;
+      if (slug !== undefined) updateData.slug = slug;
+      if (excerpt !== undefined) updateData.excerpt = excerpt;
+      if (content !== undefined) updateData.content = content;
+      if (date !== undefined) updateData.date = date;
+      if (readTime !== undefined) updateData.read_time = readTime;
+      if (category !== undefined) updateData.category = category;
+      if (author !== undefined) updateData.author = author;
+      if (image !== undefined) updateData.image = image;
+      if (featured !== undefined) updateData.featured = featured;
+
+      const { data, error } = await getSupabaseClient()
+        .from('posts')
+        .update(updateData)
+        .eq('id', id)
+        .select('id, title, slug, excerpt, content, date, read_time, category, author, image, featured, created_at, updated_at')
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') return createResponse(404, { error: 'Post not found' });
+        throw error;
+      }
 
       // Return minimal response for faster network transfer
       return createResponse(200, {
         success: true,
         post: {
-          id: result.rows[0].id,
-          title: result.rows[0].title,
-          slug: result.rows[0].slug,
-          updated_at: result.rows[0].updated_at
+          id: data.id,
+          title: data.title,
+          slug: data.slug,
+          updated_at: data.updated_at
         }
       });
     }
@@ -252,14 +235,16 @@ export const handler = async (event) => {
         return createResponse(400, { error: 'Post ID is required' });
       }
 
-      const result = await queryDb(
-        'DELETE FROM posts WHERE id = $1 RETURNING id', 
-        [id],
-        { isWrite: true, logSlow: true }
-      );
+      const { data, error } = await getSupabaseClient()
+        .from('posts')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
 
-      if (result.rows.length === 0) {
-        return createResponse(404, { error: 'Post not found' });
+      if (error) {
+        if (error.code === 'PGRST116') return createResponse(404, { error: 'Post not found' });
+        throw error;
       }
 
       return createResponse(200, { success: true, message: 'Post deleted' });

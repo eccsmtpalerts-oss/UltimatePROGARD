@@ -137,7 +137,7 @@ export function ProductQuickView({ product, open, onOpenChange }: ProductQuickVi
               <img
                 src={currentImage}
                 alt={`${product.name} - Image ${currentImageIndex + 1}`}
-                className="w-full h-full object-cover transition-opacity duration-300"
+                className="w-full h-full object-contain block transition-opacity duration-300"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23e5e7eb' width='400' height='400'/%3E%3Ctext fill='%239ca3af' font-family='system-ui' font-size='20' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3ENo Image%3C/text%3E%3C/svg%3E";
                 }}
@@ -191,7 +191,7 @@ export function ProductQuickView({ product, open, onOpenChange }: ProductQuickVi
                     <img
                       src={image}
                       alt={`Thumbnail ${index + 1}`}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain block"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none";
                       }}

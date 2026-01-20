@@ -211,7 +211,7 @@ export function MultipleImageUpload({
               <img
                 src={image}
                 alt={`Product image ${index + 1}`}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain block"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}

@@ -142,9 +142,10 @@ const Contact = () => {
 
       // Reset form
       setFormData({ name: "", email: "", subject: "", message: "", math: "", website: "" });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('EmailJS Error:', error);
-      const errorMessage = error.text || error.message || 'Please try again later or contact us directly.';
+      const errorObj = error as Error & { text?: string };
+      const errorMessage = errorObj.text || errorObj.message || 'Please try again later or contact us directly.';
       setAlert({ type: 'error', message: `Sorry, there was an error sending your message. ${errorMessage}` });
       toast({
         title: "Failed to send message",

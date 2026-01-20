@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { productStorage, AdminProduct } from "@/lib/admin-storage";
+import { productsAPI } from "@/lib/api-client";
+import { useInfiniteScroll, useLoadMoreTrigger } from "@/hooks/use-infinite-scroll";
 import { filterWithAutoCorrect, getSearchSuggestions } from "@/lib/search-utils";
 
 // Extended products data with categories (fallback data)
@@ -27,92 +28,91 @@ const fallbackProducts: (Product & { category: string; description: string })[] 
 ];
 
 const Products = () => {
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
-  const [allProducts, setAllProducts] = useState<(Product & { category: string; description: string })[]>([]);
 
-  // Load products from API
+  const {
+    items,
+    total,
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    loadMore,
+  } = useInfiniteScroll({
+    queryKey: ['products'],
+    fetchFunction: productsAPI.getAll,
+    initialLimit: 20,
+    preloadLimit: 10,
+    enabled: true,
+  });
+
+  const { ref: loadMoreRef, inView } = useLoadMoreTrigger();
+
   useEffect(() => {
-    const loadProducts = async () => {
-      try {
-        const adminProducts = await productStorage.getAll();
-        
-        if (adminProducts.length > 0) {
-          // Convert AdminProduct to Product format
-          const convertedProducts = adminProducts.map((p): Product & { category: string; description: string } => ({
-            id: p.id,
-            name: p.name,
-            price: p.price,
-            image: p.images && p.images.length > 0 ? p.images[0] : (p.image || ""),
-            images: p.images && p.images.length > 0 ? p.images : (p.image ? [p.image] : []),
-            link: p.link || "",
-            category: p.category || "Uncategorized",
-            description: p.description || "",
-            source: p.source,
-            subCategory: p.subCategory,
-          }));
-          setAllProducts(convertedProducts);
-        } else {
-          // Use fallback products if no admin products exist
-          setAllProducts(fallbackProducts);
-        }
-      } catch (error) {
-        console.error('Error loading products:', error);
-        // Use fallback products on error
-        setAllProducts(fallbackProducts);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (inView && hasNextPage && !isFetchingNextPage && !isFetching) {
+      loadMore();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, isFetching, loadMore]);
 
-    loadProducts();
-    
-    // Refresh products every 30 seconds (instead of 1 second for API)
-    const interval = setInterval(loadProducts, 30000);
-    
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
+  // Flatten the paginated data
+  const allProducts = useMemo(() => {
+    return items || [];
+  }, [items]);
+
+  // Convert to extended format for filtering
+  const extendedProducts = useMemo(() => {
+    return allProducts.map((p): Product & { category: string; description: string } => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      image: p.images && p.images.length > 0 ? p.images[0] : (p.image || ""),
+      images: p.images && p.images.length > 0 ? p.images : (p.image ? [p.image] : []),
+      link: p.link || "",
+      category: p.category || "Uncategorized",
+      description: p.description || "",
+      source: p.source,
+      subCategory: p.subCategory,
+    }));
+  }, [allProducts]);
 
   // Extract unique categories dynamically
   const categories = useMemo(() => {
-    return ["All", ...Array.from(new Set(allProducts.map(p => p.category)))];
+    const unique = Array.from(
+      new Set(
+        (allProducts as any[])
+          .map((p) => p.category)
+          .filter((c) => typeof c === 'string' && c.trim().length > 0)
+      )
+    ) as string[];
+    return ["All", ...unique];
   }, [allProducts]);
 
-  const [suggestedTerm, setSuggestedTerm] = useState<string | null>(null);
-  const [showSuggestion, setShowSuggestion] = useState(false);
-
-  const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) {
-      setSuggestedTerm(null);
-      setShowSuggestion(false);
-      return allProducts.filter((product) => {
-        const matchesCategory = selectedCategory === "All" || product.category === selectedCategory;
-        return matchesCategory;
-      });
-    }
-
-    // Use auto-correct for search
-    const searchableProducts = allProducts.filter((product) => {
-      const matchesCategory = selectedCategory === "All" || product.category === selectedCategory;
-      return matchesCategory;
+  const searchResult = useMemo(() => {
+    const withinCategory = extendedProducts.filter((product) => {
+      return selectedCategory === "All" || product.category === selectedCategory;
     });
 
-    const { filtered, suggestedTerm: suggestion } = filterWithAutoCorrect(
-      searchableProducts,
+    if (!searchQuery.trim()) {
+      return { filtered: withinCategory, suggestedTerm: null as string | null };
+    }
+
+    const { filtered, suggestedTerm } = filterWithAutoCorrect(
+      withinCategory,
       searchQuery,
       (product) => `${product.name} ${product.description || ""}`,
       0.5
     );
 
-    setSuggestedTerm(suggestion);
-    setShowSuggestion(suggestion !== null && suggestion.toLowerCase() !== searchQuery.toLowerCase());
+    return { filtered, suggestedTerm };
+  }, [extendedProducts, searchQuery, selectedCategory]);
 
-    return filtered;
-  }, [allProducts, searchQuery, selectedCategory]);
+  const filteredProducts = searchResult.filtered;
+  const suggestedTerm = searchResult.suggestedTerm;
+  const showSuggestion = Boolean(
+    suggestedTerm && suggestedTerm.toLowerCase() !== searchQuery.toLowerCase()
+  );
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -163,7 +163,6 @@ const Products = () => {
                           className="h-auto p-0 text-primary underline"
                           onClick={() => {
                             setSearchQuery(suggestedTerm);
-                            setShowSuggestion(false);
                           }}
                         >
                           Use this instead
@@ -233,7 +232,8 @@ const Products = () => {
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                Showing {filteredProducts.length} of {allProducts.length} product{allProducts.length !== 1 ? 's' : ''}
+                Showing {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+                {isFetchingNextPage && <span> (loading more...)</span>}
               </p>
               {hasActiveFilters && (
                 <div className="flex items-center gap-2">
@@ -253,13 +253,26 @@ const Products = () => {
         <section className="py-6 pb-16">
           <div className="container mx-auto px-4">
             {isLoading ? (
-              <SkeletonCardGrid count={12} />
+              <SkeletonCardGrid count={20} />
             ) : filteredProducts.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredProducts.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+                  {filteredProducts.map((product, index) => (
+                    <ProductCard key={product.id} product={product} index={index} />
+                  ))}
+                </div>
+                {/* Load more trigger */}
+                {hasNextPage && !isFetchingNextPage && (
+                  <div ref={loadMoreRef} className="flex justify-center py-8">
+                    <div className="text-muted-foreground">Loading more products...</div>
+                  </div>
+                )}
+                {isFetchingNextPage && (
+                  <div className="flex justify-center py-8">
+                    <SkeletonCardGrid count={4} />
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-16 bg-muted/50 rounded-xl">
                 <p className="text-xl font-medium text-foreground mb-2">No products found</p>

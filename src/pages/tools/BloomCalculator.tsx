@@ -159,6 +159,9 @@ interface BloomResult {
   endMonth: string;
   totalDays: number;
   data: typeof bloomData[string];
+  image?: string;
+  dataSource?: string;
+  correctedFrom?: string;
 }
 
 // Original addMonths function
@@ -173,11 +176,26 @@ const BloomCalculator = () => {
   const [customFlowerName, setCustomFlowerName] = useState("");
   const [sowingMonth, setSowingMonth] = useState("");
   const [result, setResult] = useState<BloomResult | null>(null);
+  const [correctedName, setCorrectedName] = useState<string | null>(null);
   const [plantsDatabase, setPlantsDatabase] = useState<PlantData[]>([]);
-  const [dbPlants, setDbPlants] = useState<any[]>([]);
+  const [dbPlants, setDbPlants] = useState<{
+    id: string;
+    name: string;
+    region?: string;
+    growing_months?: string;
+    season?: string;
+    soil_requirements?: string;
+    bloom_harvest_time?: string;
+    sunlight_needs?: string;
+    care_instructions?: string;
+    plant_type?: string;
+    image?: string;
+    dataSource?: string;
+    created_at?: string;
+    updated_at?: string;
+  }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
 
   // Load PlantsDatabase.json (Local/Hardcoded Data - Tier 1)
   useEffect(() => {
@@ -200,11 +218,14 @@ const BloomCalculator = () => {
   // Load plants from Neon DB (Tier 2)
   useEffect(() => {
     const loadDbPlants = async () => {
+      console.log('🔍 Bloom Calculator: Loading plants from database...');
       try {
         const plants = await plantsAPI.getAll();
-        setDbPlants(plants || []);
+        console.log('🌿 Bloom Calculator: DB plants response:', plants);
+        setDbPlants(plants.data || []);
+        console.log('✅ Bloom Calculator: DB plants loaded:', plants.data?.length || 0);
       } catch (error) {
-        console.error("Failed to load plants from database:", error);
+        console.error("❌ Failed to load plants from database:", error);
         // Don't show error toast, just log it - DB is optional fallback
       }
     };
@@ -253,7 +274,22 @@ const BloomCalculator = () => {
   };
 
   // Find plant in Neon DB (Tier 2 - Database)
-  const findPlantInDb = (searchName: string): { plant: any | null; suggestedName?: string } => {
+  const findPlantInDb = (searchName: string): { plant: {
+    id: string;
+    name: string;
+    region?: string;
+    growing_months?: string;
+    season?: string;
+    soil_requirements?: string;
+    bloom_harvest_time?: string;
+    sunlight_needs?: string;
+    care_instructions?: string;
+    plant_type?: string;
+    image?: string;
+    dataSource?: string;
+    created_at?: string;
+    updated_at?: string;
+  } | null; suggestedName?: string } => {
     const normalizedSearch = searchName.toLowerCase().trim();
     
     if (!normalizedSearch || dbPlants.length === 0) {
@@ -294,7 +330,22 @@ const BloomCalculator = () => {
   };
 
   // Convert DB plant to PlantData format
-  const convertDbPlantToPlantData = (dbPlant: any): PlantData => {
+  const convertDbPlantToPlantData = (dbPlant: {
+    id: string;
+    name: string;
+    region?: string;
+    growing_months?: string;
+    season?: string;
+    soil_requirements?: string;
+    bloom_harvest_time?: string;
+    sunlight_needs?: string;
+    care_instructions?: string;
+    plant_type?: string;
+    image?: string;
+    dataSource?: string;
+    created_at?: string;
+    updated_at?: string;
+  }): PlantData => {
     return {
       name: dbPlant.name,
       Region: dbPlant.region || '',
@@ -310,11 +361,33 @@ const BloomCalculator = () => {
 
   // Convert plant data to bloom data format
   const convertPlantToBloomData = (plant: PlantData) => {
-    // Estimate days based on growing months and bloom time
-    const growingMonths = plant["Growing Months"].split(",").map(m => m.trim()).length;
-    const estimatedDaysToMaturity = growingMonths * 30;
-    const estimatedDaysToGermination = 7; // Default
-    const estimatedBloomDuration = 60; // Default 2 months
+    const bloomText = (plant["Bloom and Harvest Time"] || '').toLowerCase();
+    const rangeMatch = bloomText.match(/(\d+)\s*(?:-|to)\s*(\d+)\s*(day|days|month|months)/i);
+    const singleMatch = bloomText.match(/(\d+)\s*(day|days|month|months)/i);
+
+    let estimatedDaysToMaturity = 60;
+    if (rangeMatch) {
+      const min = Number(rangeMatch[1]);
+      const max = Number(rangeMatch[2]);
+      const unit = rangeMatch[3].toLowerCase();
+      const avg = Math.round((min + max) / 2);
+      estimatedDaysToMaturity = unit.startsWith('month') ? avg * 30 : avg;
+    } else if (singleMatch) {
+      const value = Number(singleMatch[1]);
+      const unit = singleMatch[2].toLowerCase();
+      estimatedDaysToMaturity = unit.startsWith('month') ? value * 30 : value;
+    } else {
+      const monthsList = (plant["Growing Months"] || '')
+        .split(",")
+        .map(m => m.trim())
+        .filter(Boolean);
+      if (monthsList.length > 0) {
+        estimatedDaysToMaturity = monthsList.length * 30;
+      }
+    }
+
+    const estimatedDaysToGermination = 7;
+    const estimatedBloomDuration = 60;
     
     // Parse care instructions
     const careInstructions = plant["Care Instructions"]
@@ -345,19 +418,19 @@ const BloomCalculator = () => {
       "Mango", "Banana", "Papaya", "Guava", "Lemon"
     ];
     
-    // Check both local and DB plants
+    // Check both local and DB plants (sync — safe for Select options)
     const foundPlants = popularNames
-      .map(name => {
+      .map((name) => {
         const localResult = findPlantInLocalDatabase(name);
-        if (localResult.plant) return localResult;
+        if (localResult.plant) return localResult.plant;
+
         const dbResult = findPlantInDb(name);
-        if (dbResult.plant) {
-          return { plant: convertDbPlantToPlantData(dbResult.plant), suggestedName: dbResult.suggestedName };
-        }
-        return { plant: null };
+        if (dbResult.plant) return convertDbPlantToPlantData(dbResult.plant);
+
+        return null;
       })
-      .filter(result => result.plant !== null)
-      .map(result => ({ value: result.plant!.name, label: result.plant!.name }));
+      .filter((p): p is PlantData => p !== null)
+      .map((p) => ({ value: p.name, label: p.name }));
     
     return [
       ...foundPlants.slice(0, 10),
@@ -368,6 +441,7 @@ const BloomCalculator = () => {
 
   const calculateBloomTime = async () => {
     let selectedFlower = flowerName;
+    const isCustomInput = flowerName === "Other";
 
     if (!selectedFlower || !sowingMonth) {
       toast({
@@ -392,120 +466,164 @@ const BloomCalculator = () => {
 
     // Reset result when changing plant
     setResult(null);
-    setAiResponse(null);
+    setCorrectedName(null);
 
     let data;
     let displayName = selectedFlower;
     let dataSource = '';
+    let image: string | undefined;
+    let correctedFrom: string | undefined;
+
+    if (isCustomInput) {
+      const candidates = Array.from(
+        new Set([
+          ...plantsDatabase.map(p => p.name),
+          ...dbPlants.map(p => p.name),
+          "Rose", "Marigold", "Sunflower", "Tulip", "Jasmine",
+          "Tomato", "Chili", "Brinjal", "Okra", "Cucumber",
+          "Mango", "Banana", "Papaya", "Guava", "Lemon",
+        ])
+      ).filter(Boolean);
+
+      const { match, similarity } = findBestMatch(selectedFlower, candidates, 0.5);
+      if (match && similarity >= 0.6 && match.toLowerCase() !== selectedFlower.toLowerCase()) {
+        correctedFrom = selectedFlower;
+        selectedFlower = match;
+        displayName = match;
+        setCorrectedName(match);
+      }
+    }
 
     // TIER 1: Try local/hardcoded data first
-    const { plant: localPlantData, suggestedName: localSuggestedName } = findPlantInLocalDatabase(selectedFlower);
-    
-    if (localPlantData) {
-      // Use local database data
-      data = convertPlantToBloomData(localPlantData);
-      displayName = localPlantData.name;
-      dataSource = 'local';
-      
-      // Show suggestion if name was corrected
-      if (localSuggestedName && localSuggestedName !== selectedFlower) {
-        toast({
-          title: "Plant Found (Local Data)",
-          description: `Did you mean "${localSuggestedName}"? Using that instead.`,
-        });
+    const localResult = findPlantInLocalDatabase(selectedFlower);
+    if (localResult.plant) {
+      if (localResult.suggestedName && localResult.suggestedName.toLowerCase() !== selectedFlower.toLowerCase()) {
+        correctedFrom = selectedFlower;
+        displayName = localResult.suggestedName;
+        setCorrectedName(localResult.suggestedName);
       }
-    } else {
-      // Check hardcoded bloomData
-      const normalizedName = selectedFlower.charAt(0).toUpperCase() + selectedFlower.slice(1).toLowerCase();
-      const fallbackData = bloomData[normalizedName];
-      
-      if (fallbackData) {
-        data = fallbackData;
-        displayName = normalizedName;
-        dataSource = 'hardcoded';
-      } else {
-        // TIER 2: Try Neon DB plants table
-        const { plant: dbPlantData, suggestedName: dbSuggestedName } = findPlantInDb(selectedFlower);
-        
-        if (dbPlantData) {
-          // Convert DB plant to PlantData format and then to bloom data
-          const plantData = convertDbPlantToPlantData(dbPlantData);
-          data = convertPlantToBloomData(plantData);
-          displayName = dbPlantData.name;
-          dataSource = 'database';
-          
-          if (dbSuggestedName && dbSuggestedName !== selectedFlower) {
-            toast({
-              title: "Plant Found (Database)",
-              description: `Found in database. Did you mean "${dbSuggestedName}"?`,
-            });
-          } else {
-            toast({
-              title: "Plant Found (Database)",
-              description: "Found plant information in our database.",
-            });
-          }
-        } else {
-          // TIER 3: Fallback to AI
-          setIsLoadingAI(true);
-          setAiResponse(null);
-          
-          try {
-            const aiResponse = await fetch('/.netlify/functions/plant-ai-fallback', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                plantName: selectedFlower,
-                query: `bloom time and timeline for ${selectedFlower}`,
-                context: `User is asking about bloom timeline for ${selectedFlower} planted in ${sowingMonth}`
-              })
-            });
+      data = convertPlantToBloomData(localResult.plant);
+      dataSource = 'Local Database';
+      if (localResult.plant.Image && localResult.plant.Image.trim()) {
+        image = localResult.plant.Image.trim();
+      }
+    }
 
-            if (aiResponse.ok) {
-              const aiData = await aiResponse.json();
-              if (aiData.success && aiData.response) {
-                setAiResponse(aiData.response);
-                dataSource = 'ai';
-                
-                // Use generic bloom data with AI response
-                data = {
-                  daysToGermination: 10,
-                  daysToMaturity: 60,
-                  bloomDuration: 90,
-                  care: ['Follow general plant care guidelines', 'Refer to AI response for specific details']
-                };
-                
-                toast({
-                  title: "AI Information Available",
-                  description: "Using AI-generated information for this plant. Check the results below.",
-                });
-              } else {
-                throw new Error('AI response not available');
-              }
-            } else {
-              throw new Error('AI service unavailable');
+    // TIER 2: Try database data second
+    if (!data) {
+      const dbResult = findPlantInDb(selectedFlower);
+      if (dbResult.plant) {
+        if (dbResult.suggestedName && dbResult.suggestedName.toLowerCase() !== selectedFlower.toLowerCase()) {
+          correctedFrom = selectedFlower;
+          displayName = dbResult.suggestedName;
+          setCorrectedName(dbResult.suggestedName);
+        }
+        data = convertPlantToBloomData(convertDbPlantToPlantData(dbResult.plant));
+        dataSource = 'Live Database';
+        if (dbResult.plant.image && dbResult.plant.image.trim()) {
+          image = dbResult.plant.image.trim();
+        }
+      } else {
+        // If the plant is not in our currently loaded DB page, search the DB directly by name
+        try {
+          const matches = await plantsAPI.searchByName(selectedFlower, 5);
+          if (matches && matches.length > 0) {
+            const match = matches[0] as typeof dbPlants[number];
+            data = convertPlantToBloomData(convertDbPlantToPlantData(match));
+            dataSource = 'Live Database';
+            if (match.image && match.image.trim()) {
+              image = match.image.trim();
             }
-          } catch (error) {
-            console.error('AI fallback error:', error);
-            setIsLoadingAI(false);
-            
-            // Show error if all tiers failed
-            const suggestionText = dbSuggestedName 
-              ? ` Did you mean "${dbSuggestedName}"?`
-              : localSuggestedName
-              ? ` Did you mean "${localSuggestedName}"?`
-              : "";
-            toast({
-              title: "Plant Not Found",
-              description: `Data for "${selectedFlower}" is not available in our databases, and AI service is unavailable.${suggestionText} Please try a different name.`,
-              variant: "destructive",
+
+            // Cache it so subsequent searches are faster
+            setDbPlants((prev) => {
+              if (prev.some((p) => p.id === match.id)) return prev;
+              return [match, ...prev];
             });
-            return;
           }
-          
-          setIsLoadingAI(false);
+        } catch (error) {
+          console.error('❌ Bloom Calculator: DB searchByName failed:', error);
         }
       }
+    }
+
+    if (!data) {
+      setIsLoadingAI(true);
+      try {
+        const aiSuggestion = await fetch('/.netlify/functions/ai-suggest', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ plantName: selectedFlower }),
+        });
+        
+        if (aiSuggestion.ok) {
+          const aiData = await aiSuggestion.json();
+          const suggested = (aiData?.suggestion || '').trim();
+          if (suggested) {
+            const localSuggested = findPlantInLocalDatabase(suggested);
+            if (localSuggested.plant) {
+              data = convertPlantToBloomData(localSuggested.plant);
+              dataSource = 'Local Database';
+              displayName = suggested;
+              setCorrectedName(suggested);
+              if (localSuggested.plant.Image && localSuggested.plant.Image.trim()) {
+                image = localSuggested.plant.Image.trim();
+              }
+            }
+
+            if (!data) {
+              const dbSuggested = findPlantInDb(suggested);
+              if (dbSuggested.plant) {
+                data = convertPlantToBloomData(convertDbPlantToPlantData(dbSuggested.plant));
+                dataSource = 'Live Database';
+                displayName = suggested;
+                setCorrectedName(suggested);
+                if (dbSuggested.plant.image && dbSuggested.plant.image.trim()) {
+                  image = dbSuggested.plant.image.trim();
+                }
+              }
+            }
+
+            if (!data) {
+              try {
+                const matches = await plantsAPI.searchByName(suggested, 5);
+                if (matches && matches.length > 0) {
+                  const match = matches[0] as typeof dbPlants[number];
+                  data = convertPlantToBloomData(convertDbPlantToPlantData(match));
+                  dataSource = 'Live Database';
+                  displayName = match.name;
+                  setCorrectedName(match.name);
+                  if (match.image && match.image.trim()) {
+                    image = match.image.trim();
+                  }
+
+                  setDbPlants((prev) => {
+                    if (prev.some((p) => p.id === match.id)) return prev;
+                    return [match, ...prev];
+                  });
+                }
+              } catch (error) {
+                console.error('❌ Bloom Calculator: DB searchByName failed:', error);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ AI suggestion failed:', error);
+      } finally {
+        setIsLoadingAI(false);
+      }
+    }
+
+    if (!data) {
+      toast({
+        title: "Plant Not Found",
+        description: `No bloom data found for "${selectedFlower}". Try a different name or choose from the list.`,
+        variant: "destructive",
+      });
+      return;
     }
 
     // Timeline calculation
@@ -521,6 +639,9 @@ const BloomCalculator = () => {
       endMonth,
       totalDays,
       data,
+      image,
+      dataSource,
+      correctedFrom,
     });
   };
 
@@ -529,8 +650,8 @@ const BloomCalculator = () => {
     setCustomFlowerName("");
     setSowingMonth("");
     setResult(null);
-    setAiResponse(null);
     setIsLoadingAI(false);
+    setCorrectedName(null);
   };
 
   return (
@@ -600,6 +721,11 @@ const BloomCalculator = () => {
                     className="mt-2"
                   />
                 )}
+                {correctedName && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Showing results for "{correctedName}"
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -638,6 +764,23 @@ const BloomCalculator = () => {
               <h2 className="text-xl font-semibold text-primary mb-4">
                 🌺 {result.flowerName} Bloom Timeline
               </h2>
+
+              {result.dataSource && (
+                <p className="text-xs text-muted-foreground mb-4">Source: {result.dataSource}</p>
+              )}
+
+              {result.image && (
+                <div className="w-full aspect-video overflow-hidden rounded-lg mb-6 bg-muted">
+                  <img
+                    src={result.image}
+                    alt={result.flowerName}
+                    className="w-full h-full object-contain block"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                </div>
+              )}
 
               <h3 className="font-semibold text-foreground mb-4">📅 Bloom Timeline</h3>
 
@@ -692,26 +835,6 @@ const BloomCalculator = () => {
                   ))}
                 </ul>
               </div>
-
-              {/* AI Response Section */}
-              {aiResponse && (
-                <div className="mt-6 p-4 bg-accent/10 border border-accent/20 rounded-lg">
-                  <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-                    <span>🤖</span> AI Information
-                  </h3>
-                  <div className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {aiResponse}
-                  </div>
-                </div>
-              )}
-
-              {isLoadingAI && (
-                <div className="mt-6 p-4 bg-accent/10 border border-accent/20 rounded-lg">
-                  <p className="text-sm text-muted-foreground">
-                    🤖 Fetching AI information about this plant...
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>

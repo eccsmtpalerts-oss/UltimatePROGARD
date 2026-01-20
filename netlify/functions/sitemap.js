@@ -1,4 +1,4 @@
-import { queryDb, createResponse } from './utils/db.js';
+import { querySupabase, createResponse } from './utils/db.js';
 
 /**
  * Dynamic Sitemap Generator
@@ -8,14 +8,13 @@ import { queryDb, createResponse } from './utils/db.js';
 export const handler = async (event) => {
   try {
     // Fetch all posts from database
-    const postsResult = await queryDb(
-      `SELECT slug, updated_at, created_at 
-       FROM posts 
-       WHERE slug IS NOT NULL 
-       ORDER BY created_at DESC`
-    );
+    const result = await querySupabase('posts', {
+      select: 'slug, updated_at, created_at',
+      filters: { slug: { not: null } },
+      orderBy: { column: 'created_at', ascending: false }
+    });
 
-    const posts = postsResult.rows || [];
+    const posts = result.rows || [];
     const baseUrl = 'https://perfectgardener.netlify.app';
     const currentDate = new Date().toISOString().split('T')[0];
 

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Lock, Shield, UserPlus, KeyRound, Mail, ArrowLeft } from "lucide-react";
+import { Lock, UserPlus, KeyRound, Mail, ArrowLeft } from "lucide-react";
 import { usersAPI } from "@/lib/api-client";
 import emailjs from "@emailjs/browser";
 
@@ -80,10 +80,11 @@ const AdminLogin = () => {
         });
         navigate("/admin");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Invalid username or password';
       toast({
         title: "Login Failed",
-        description: error.message || "Invalid username or password.",
+        description: errorMessage,
         variant: "destructive",
       });
       setPassword("");
@@ -120,9 +121,10 @@ const AdminLogin = () => {
 
       console.log('OTP generated successfully for:', email);
       return data.otp; // For testing - in production, OTP is sent via email only
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Generate OTP Error:', error);
-      throw new Error(error.message || 'Failed to generate OTP. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate OTP. Please try again.';
+      throw new Error(errorMessage);
     }
   };
 
@@ -180,12 +182,13 @@ const AdminLogin = () => {
       });
       
       return response;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Enhanced error logging
+      const errorObj = error as Error & { status?: number; text?: string };
       console.error('EmailJS Error Details:', {
-        status: error?.status,
-        text: error?.text,
-        message: error?.message,
+        status: errorObj?.status,
+        text: errorObj?.text,
+        message: errorObj?.message,
         error: error,
         serviceId: EMAILJS_CONFIG.serviceId,
         templateId: EMAILJS_CONFIG.templateId
@@ -194,21 +197,18 @@ const AdminLogin = () => {
       // Extract more detailed error message
       let errorMessage = 'Failed to send OTP email. Please try again.';
       
-      if (error?.text) {
-        errorMessage = `EmailJS Error: ${error.text}`;
-      } else if (error?.message) {
-        errorMessage = `Error: ${error.message}`;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-
-      // Add helpful hints based on common errors
-      if (error?.status === 400) {
-        errorMessage += ' (Invalid template parameters. Please check EmailJS template configuration.)';
-      } else if (error?.status === 401) {
-        errorMessage += ' (Invalid EmailJS credentials. Please check service ID and public key.)';
-      } else if (error?.status === 404) {
-        errorMessage += ' (Template or service not found. Please check template ID.)';
+      if (errorObj?.status === 429) {
+        errorMessage = 'Too many email requests. Please wait a moment and try again.';
+      } else if (errorObj?.status === 400) {
+        errorMessage = 'Invalid email configuration. Please contact support.';
+      } else if (errorObj?.status === 401) {
+        errorMessage = 'Email service authentication failed. Please check configuration.';
+      } else if (errorObj?.status === 403) {
+        errorMessage = 'Email service access forbidden. Please check API keys.';
+      } else if (errorObj?.text?.includes('network')) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      } else if (errorObj?.message) {
+        errorMessage = errorObj.message;
       }
 
       throw new Error(errorMessage);
@@ -270,11 +270,12 @@ const AdminLogin = () => {
         title: "OTP Sent Successfully",
         description: "OTP has been sent. Please contact the admin to receive the OTP.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Create User OTP Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send OTP';
       toast({
         title: "Failed to Send OTP",
-        description: error.message || "Failed to send OTP. Please check your email address and try again.",
+        description: errorMessage || "Failed to send OTP. Please check your email address and try again.",
         variant: "destructive",
       });
     } finally {
@@ -337,10 +338,11 @@ const AdminLogin = () => {
       
       // Switch to login tab
       setActiveTab('login');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create account. Please try again.';
       toast({
         title: "Error",
-        description: error.message || "Failed to create account. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -385,11 +387,12 @@ const AdminLogin = () => {
         title: "OTP Sent Successfully",
         description: "OTP has been sent. Please contact the admin to receive the OTP.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Forgot Password OTP Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send OTP';
       toast({
         title: "Failed to Send OTP",
-        description: error.message || "Failed to send OTP. Please check your email address and try again.",
+        description: errorMessage || "Failed to send OTP. Please check your email address and try again.",
         variant: "destructive",
       });
     } finally {
@@ -439,10 +442,11 @@ const AdminLogin = () => {
         title: "OTP Verified",
         description: "Please enter your new password.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Invalid or expired OTP. Please try again.';
       toast({
         title: "Error",
-        description: error.message || "Invalid or expired OTP. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -501,10 +505,11 @@ const AdminLogin = () => {
       
       // Switch to login tab
       setActiveTab('login');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to reset password. Please try again.';
       toast({
         title: "Error",
-        description: error.message || "Failed to reset password. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -513,35 +518,44 @@ const AdminLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-accent/5 to-background -z-10" />
-      
-      <Card className="w-full max-w-md shadow-xl border-2">
-        <CardHeader className="space-y-4 text-center">
-          <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <Shield className="w-8 h-8 text-primary" />
+  <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-accent/5 to-background -z-10" />
+    
+    <Card className="w-full max-w-md shadow-xl border-2">
+      <CardHeader className="space-y-4 text-center">
+        <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+          <div className="w-full h-full aspect-square overflow-hidden">
+            <img
+              src="/images/Avtar.png"
+              alt="Perfect Gardener Logo"
+              className="w-full h-full object-contain block"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
           </div>
-          <CardTitle className="text-2xl font-display">Admin Portal</CardTitle>
-          <CardDescription>
-            Manage your admin account and access the dashboard
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="login">
-                <Lock className="w-4 h-4 mr-1" />
-                Login
-              </TabsTrigger>
-              <TabsTrigger value="create">
-                <UserPlus className="w-4 h-4 mr-1" />
-                Create
-              </TabsTrigger>
-              <TabsTrigger value="forgot">
-                <KeyRound className="w-4 h-4 mr-1" />
-                Reset
-              </TabsTrigger>
-            </TabsList>
+        </div>
+        <CardTitle className="text-2xl font-display">Admin Portal</CardTitle>
+        <CardDescription>
+          Manage your admin account and access the dashboard
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="login">
+              <Lock className="w-4 h-4 mr-1" />
+              Login
+            </TabsTrigger>
+            <TabsTrigger value="create">
+              <UserPlus className="w-4 h-4 mr-1" />
+              Create
+            </TabsTrigger>
+            <TabsTrigger value="forgot">
+              <KeyRound className="w-4 h-4 mr-1" />
+              Reset
+            </TabsTrigger>
+          </TabsList>
 
             {/* Login Tab */}
             <TabsContent value="login" className="space-y-4 mt-4">

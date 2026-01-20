@@ -33,7 +33,7 @@ export function SkeletonCard({ className }: SkeletonCardProps) {
 
 export function SkeletonCardGrid({ count = 4 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} className={`animation-delay-${(i + 1) * 100}`} />
       ))}

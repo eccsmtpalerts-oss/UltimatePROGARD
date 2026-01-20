@@ -17,8 +17,10 @@ export function ProductsSection({ limit = 5, showViewAll = true }: ProductsSecti
 
   useEffect(() => {
     const loadProducts = async () => {
+      console.log('🔍 ProductsSection: Starting to load products...');
       try {
         const adminProducts = await productStorage.getAll();
+        console.log('📦 ProductsSection: Received products:', adminProducts);
         
         if (adminProducts.length > 0) {
           // Convert AdminProduct to Product format
@@ -30,13 +32,15 @@ export function ProductsSection({ limit = 5, showViewAll = true }: ProductsSecti
             images: p.images && p.images.length > 0 ? p.images : (p.image ? [p.image] : []),
             link: p.link || "",
           }));
+          console.log('✅ ProductsSection: Converted products:', convertedProducts);
           setProducts(convertedProducts.slice(0, limit));
         } else {
           // Use empty array if no products
+          console.log('⚠️ ProductsSection: No products found, setting empty array');
           setProducts([]);
         }
       } catch (error) {
-        console.error('Error loading products:', error);
+        console.error('❌ ProductsSection: Error loading products:', error);
         setProducts([]);
       } finally {
         setIsLoading(false);
@@ -54,7 +58,7 @@ export function ProductsSection({ limit = 5, showViewAll = true }: ProductsSecti
   }, [limit]);
 
   return (
-    <section id="products" className="py-20 md:py-32 relative overflow-hidden wavy-top wavy-bottom">
+    <section id="products" className="py-8 md:py-12 relative overflow-hidden wavy-top wavy-bottom">
       {/* Subtle Background Gradient */}
       <div 
         className="absolute inset-0 -z-10"
@@ -85,7 +89,7 @@ export function ProductsSection({ limit = 5, showViewAll = true }: ProductsSecti
         {isLoading ? (
           <SkeletonCardGrid count={limit} />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
             {products.map((product, index) => (
               <ProductCard key={product.id} product={product} index={index} />
             ))}

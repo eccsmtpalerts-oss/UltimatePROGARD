@@ -1,4 +1,4 @@
-import { queryDb, createResponse } from './utils/db.js';
+import { querySupabase, getSupabaseClient, createResponse } from './utils/db.js';
 import bcrypt from 'bcryptjs';
 
 export const handler = async (event) => {
@@ -18,10 +18,10 @@ export const handler = async (event) => {
         return createResponse(400, { error: 'Username and password are required' });
       }
 
-      const result = await queryDb(
-        'SELECT id, username, email, password_hash FROM users WHERE username = $1',
-        [username]
-      );
+      const result = await querySupabase('users', {
+        select: 'id, username, email, password_hash',
+        filters: { username }
+      });
 
       if (result.rows.length === 0) {
         return createResponse(401, { error: 'Invalid username or password' });
@@ -54,10 +54,10 @@ export const handler = async (event) => {
       }
 
       // Check if user already exists
-      const existing = await queryDb(
-        'SELECT id FROM users WHERE username = $1',
-        [username]
-      );
+      const existing = await querySupabase('users', {
+        select: 'id',
+        filters: { username }
+      });
 
       if (existing.rows.length > 0) {
         return createResponse(409, { error: 'Username already exists' });
@@ -68,16 +68,21 @@ export const handler = async (event) => {
       const passwordHash = await bcrypt.hash(password, saltRounds);
 
       // Insert user
-      const result = await queryDb(
-        `INSERT INTO users (username, email, password_hash) 
-         VALUES ($1, $2, $3) 
-         RETURNING id, username, email, created_at`,
-        [username, email || null, passwordHash]
-      );
+      const { data, error } = await getSupabaseClient()
+        .from('users')
+        .insert({
+          username,
+          email: email || null,
+          password_hash: passwordHash
+        })
+        .select('id, username, email, created_at')
+        .single();
+
+      if (error) throw error;
 
       return createResponse(201, {
         success: true,
-        user: result.rows[0]
+        user: data
       });
     }
 
@@ -90,10 +95,10 @@ export const handler = async (event) => {
       }
 
       // Find user by email
-      const userResult = await queryDb(
-        'SELECT id, username FROM users WHERE email = $1',
-        [email]
-      );
+      const userResult = await querySupabase('users', {
+        select: 'id, username',
+        filters: { email }
+      });
 
       if (userResult.rows.length === 0) {
         return createResponse(404, { error: 'User not found with this email' });
@@ -104,10 +109,12 @@ export const handler = async (event) => {
       const passwordHash = await bcrypt.hash(newPassword, saltRounds);
 
       // Update password
-      await queryDb(
-        'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE email = $2',
-        [passwordHash, email]
-      );
+      const { error } = await getSupabaseClient()
+        .from('users')
+        .update({ password_hash: passwordHash })
+        .eq('email', email);
+
+      if (error) throw error;
 
       return createResponse(200, {
         success: true,

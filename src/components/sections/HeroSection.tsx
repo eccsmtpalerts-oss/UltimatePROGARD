@@ -68,6 +68,10 @@ export function HeroSection() {
       <div className="absolute top-1/4 left-1/4 w-32 h-32 rounded-full bg-primary/10 blur-2xl animate-float-slow hidden lg:block" />
       <div className="absolute bottom-1/4 right-1/4 w-40 h-40 rounded-full bg-accent/10 blur-2xl animate-float-fast hidden lg:block" />
 
+      {/* Mobile subtle blobs (keep visual richness on mobile) */}
+      <div className="absolute top-24 right-8 w-40 h-40 rounded-full bg-primary/10 blur-3xl md:hidden" />
+      <div className="absolute bottom-24 left-6 w-44 h-44 rounded-full bg-accent/10 blur-3xl md:hidden" />
+
       {/* Decorative Animated Circles */}
       <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/4 w-[700px] h-[700px] rounded-full border-2 border-dashed border-primary/15 animate-slow-spin hidden lg:block" />
       <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/4 w-[550px] h-[550px] rounded-full border border-primary/10 animate-slow-spin hidden lg:block" style={{ animationDirection: "reverse", animationDuration: "25s" }} />
@@ -305,6 +309,24 @@ export function HeroSection() {
                 </div>
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-primary/10 via-transparent to-primary/10 blur-xl pointer-events-none" />
               </div>
+
+              {/* Mobile floating chips (match desktop labels concept) */}
+              {[
+                { label: "Organic Seeds", x: 0, y: -130 },
+                { label: "Fresh Plants", x: 120, y: -10 },
+                { label: "Garden Tools", x: 0, y: 120 },
+                { label: "Expert Tips", x: -120, y: -10 },
+              ].map((chip) => (
+                <div
+                  key={chip.label}
+                  className="absolute z-30"
+                  style={{ left: `calc(50% + ${chip.x}px)`, top: `calc(50% + ${chip.y}px)`, transform: "translate(-50%, -50%)" }}
+                >
+                  <div className="bg-white/90 backdrop-blur-sm border border-primary/15 shadow-md rounded-full px-3 py-1 text-[11px] font-semibold text-foreground">
+                    {chip.label}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

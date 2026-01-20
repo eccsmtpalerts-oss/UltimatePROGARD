@@ -216,9 +216,10 @@ const BlogPost = () => {
                     prose-pre:bg-muted prose-pre:text-foreground"
                   dangerouslySetInnerHTML={{ 
                     __html: DOMPurify.sanitize(post.content, {
-                      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'div', 'span', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'hr'],
-                      ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'id', 'target', 'rel', 'style'],
-                      ALLOW_DATA_ATTR: false
+                      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'div', 'span', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'hr', 'iframe'],
+                      ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'id', 'target', 'rel', 'style', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow'],
+                      ALLOW_DATA_ATTR: false,
+                      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|data):|[^a-z]|[a-z+.\-\w]+(?:[^a-z+.\-:]|$))/i,
                     })
                   }}
                 />

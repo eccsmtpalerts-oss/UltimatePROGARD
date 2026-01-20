@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { MessageSquare, Reply, Send, ChevronDown, ChevronUp } from "lucide-react";
-import { commentStorage, Comment } from "@/lib/comment-storage";
+import { MessageSquare, Reply, Send } from "lucide-react";
+import { commentsAPI } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 
@@ -14,24 +14,45 @@ interface CommentSectionProps {
 
 export function CommentSection({ postSlug }: CommentSectionProps) {
   const { toast } = useToast();
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [showAll, setShowAll] = useState(false);
+  const [comments, setComments] = useState<Array<{
+    id: string;
+    author: string;
+    content: string;
+    date: string;
+    parentId?: string;
+  }>>([]);
   const [newComment, setNewComment] = useState({ author: "", content: "" });
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState("");
 
   useEffect(() => {
-    const loadComments = () => {
-      const postComments = commentStorage.getByPostSlug(postSlug);
-      setComments(postComments);
+    let mounted = true;
+
+    const loadComments = async () => {
+      try {
+        const rows = await commentsAPI.getPostComments(postSlug);
+        if (!mounted) return;
+        setComments(
+          rows.map((r) => ({
+            id: r.id,
+            author: r.author_name,
+            content: r.content,
+            date: r.created_at,
+            parentId: r.parent_id || undefined,
+          }))
+        );
+      } catch (error) {
+        console.error('❌ Failed to load post comments:', error);
+      }
     };
 
     loadComments();
-    const interval = setInterval(loadComments, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+    };
   }, [postSlug]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.author.trim() || !newComment.content.trim()) {
       toast({
@@ -42,28 +63,42 @@ export function CommentSection({ postSlug }: CommentSectionProps) {
       return;
     }
 
-    const comment: Comment = {
-      id: crypto.randomUUID(),
-      postSlug,
-      author: newComment.author,
-      content: newComment.content,
-      date: new Date().toISOString(),
-      replies: [],
-    };
+    try {
+      await commentsAPI.createPostComment({
+        postSlug,
+        authorName: newComment.author,
+        content: newComment.content,
+      });
 
-    commentStorage.add(comment);
-    setNewComment({ author: "", content: "" });
-    toast({
-      title: "Comment Added",
-      description: "Your comment has been posted!",
-    });
-    
-    // Refresh comments
-    const postComments = commentStorage.getByPostSlug(postSlug);
-    setComments(postComments);
+      setNewComment({ author: "", content: "" });
+
+      const rows = await commentsAPI.getPostComments(postSlug);
+      setComments(
+        rows.map((r) => ({
+          id: r.id,
+          author: r.author_name,
+          content: r.content,
+          date: r.created_at,
+          parentId: r.parent_id || undefined,
+        }))
+      );
+
+      toast({
+        title: "Comment Added",
+        description: "Your comment has been posted!",
+      });
+    } catch (error: unknown) {
+      console.error('❌ Failed to submit post comment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to post comment.';
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleReply = (parentId: string) => {
+  const handleReply = async (parentId: string) => {
     if (!replyContent.trim()) {
       toast({
         title: "Error",
@@ -73,30 +108,51 @@ export function CommentSection({ postSlug }: CommentSectionProps) {
       return;
     }
 
-    const reply: Comment = {
-      id: crypto.randomUUID(),
-      postSlug,
-      author: "Guest", // You can make this dynamic
-      content: replyContent,
-      date: new Date().toISOString(),
-      parentId,
-    };
+    try {
+      await commentsAPI.createPostComment({
+        postSlug,
+        parentId,
+        authorName: "Guest",
+        content: replyContent,
+      });
 
-    commentStorage.addReply(parentId, reply);
-    setReplyContent("");
-    setReplyingTo(null);
-    toast({
-      title: "Reply Added",
-      description: "Your reply has been posted!",
-    });
-    
-    // Refresh comments
-    const postComments = commentStorage.getByPostSlug(postSlug);
-    setComments(postComments);
+      setReplyContent("");
+      setReplyingTo(null);
+
+      const rows = await commentsAPI.getPostComments(postSlug);
+      setComments(
+        rows.map((r) => ({
+          id: r.id,
+          author: r.author_name,
+          content: r.content,
+          date: r.created_at,
+          parentId: r.parent_id || undefined,
+        }))
+      );
+
+      toast({
+        title: "Reply Added",
+        description: "Your reply has been posted!",
+      });
+    } catch (error: unknown) {
+      console.error('❌ Failed to submit reply:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to post reply.';
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
   };
 
-  const displayedComments = showAll ? comments : comments.slice(0, 3);
-  const hasMore = comments.length > 3;
+  const displayedComments = comments.filter((c) => !c.parentId);
+  const repliesByParent = comments.reduce<Record<string, typeof comments>>((acc, c) => {
+    if (c.parentId) {
+      if (!acc[c.parentId]) acc[c.parentId] = [];
+      acc[c.parentId].push(c);
+    }
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -146,6 +202,7 @@ export function CommentSection({ postSlug }: CommentSectionProps) {
                 <CommentItem
                   key={comment.id}
                   comment={comment}
+                  replies={repliesByParent[comment.id] || []}
                   onReply={() => setReplyingTo(comment.id)}
                   isReplying={replyingTo === comment.id}
                   replyContent={replyContent}
@@ -158,28 +215,6 @@ export function CommentSection({ postSlug }: CommentSectionProps) {
                 />
               ))}
             </div>
-
-            {hasMore && (
-              <div className="mt-4 text-center">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAll(!showAll)}
-                  className="w-full"
-                >
-                  {showAll ? (
-                    <>
-                      <ChevronUp className="w-4 h-4 mr-2" />
-                      Show Less
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="w-4 h-4 mr-2" />
-                      Show All Comments ({comments.length - 3} more)
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}
@@ -197,7 +232,20 @@ export function CommentSection({ postSlug }: CommentSectionProps) {
 }
 
 interface CommentItemProps {
-  comment: Comment;
+  comment: {
+    id: string;
+    author: string;
+    content: string;
+    date: string;
+    parentId?: string;
+  };
+  replies: Array<{
+    id: string;
+    author: string;
+    content: string;
+    date: string;
+    parentId?: string;
+  }>;
   onReply: () => void;
   isReplying: boolean;
   replyContent: string;
@@ -208,6 +256,7 @@ interface CommentItemProps {
 
 function CommentItem({
   comment,
+  replies,
   onReply,
   isReplying,
   replyContent,
@@ -215,9 +264,6 @@ function CommentItem({
   onReplySubmit,
   onCancelReply,
 }: CommentItemProps) {
-  const allComments = commentStorage.getAll();
-  const replies = allComments.filter((c) => c.parentId === comment.id);
-
   return (
     <div className="border-b border-border pb-4 last:border-0">
       <div className="flex items-start gap-3">

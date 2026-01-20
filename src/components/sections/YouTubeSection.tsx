@@ -7,20 +7,16 @@ export function YouTubeSection() {
       <div className="section-container">
         {/* Intro Text */}
         <div className="text-center mb-8">
-          <p className="text-base md:text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-            Our YouTube channel shows step-by-step gardening videos, plant care demos, and behind-the-scenes looks at our own garden experiments.
-          </p>
-        </div>
+         </div>
 
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* Content */}
           <div className="space-y-6 text-center lg:text-left">
             <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground">
-              Perfect Gardener on YouTube
+             Support Perfect Gardener on YouTube !
             </h2>
             <p className="text-lg text-muted-foreground max-w-lg mx-auto lg:mx-0">
-              Hello everyone, this channel is all about nature, flowers, plants, care, 
-              and helping them grow better. Join our community of garden enthusiasts!
+            I love sharing my gardening journey through videos! From planting seeds to harvesting vegetables, you'll find practical tips, real garden tours, and honest reviews of what works (and what doesn't). Join me as we learn and grow together!
             </p>
             <Button asChild size="lg" className="group">
               <a

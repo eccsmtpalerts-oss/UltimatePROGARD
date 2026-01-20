@@ -1,15 +1,16 @@
-import { useState, useEffect, useMemo } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Filter, X, Calendar, Clock, ArrowRight, Sparkles } from "lucide-react";
-import { Header } from "@/components/layout/Header";
-import { Footer } from "@/components/layout/Footer";
+import { ArrowRight, Calendar, Clock, Filter, Search, Sparkles, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Footer } from "@/components/layout/Footer";
+import { Header } from "@/components/layout/Header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { postsAPI } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { postStorage, AdminPost } from "@/lib/admin-storage";
 import { filterWithAutoCorrect } from "@/lib/search-utils";
 
 interface Post {
@@ -26,136 +27,9 @@ interface Post {
   slug?: string;
 }
 
-// Extended blog posts data (fallback)
-const fallbackPosts: Post[] = [
-  {
-    id: "1",
-    title: "10 Essential Tips for Beginning Gardeners",
-    excerpt: "Starting a garden can feel overwhelming, but with these simple tips you'll be growing beautiful plants in no time.",
-    content: "Full article content here...",
-    date: "2024-12-15",
-    readTime: "5 min read",
-    category: "Beginner Guides",
-    author: "Perfect Gardener",
-    featured: true,
-  },
-  {
-    id: "2",
-    title: "Best Indoor Plants for Low Light Conditions",
-    excerpt: "Not all plants need bright sunlight. Discover the best varieties for darker corners of your home.",
-    content: "Full article content here...",
-    date: "2024-12-10",
-    readTime: "4 min read",
-    category: "Indoor Gardening",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "3",
-    title: "How to Make Your Own Organic Compost",
-    excerpt: "Turn your kitchen scraps into black gold for your garden with this simple composting guide.",
-    content: "Full article content here...",
-    date: "2024-12-05",
-    readTime: "6 min read",
-    category: "DIY & Tutorials",
-    author: "Perfect Gardener",
-    featured: true,
-  },
-  {
-    id: "4",
-    title: "Seasonal Flower Planting Guide for India",
-    excerpt: "Learn which flowers to plant in each season for year-round blooms in your Indian garden.",
-    content: "Full article content here...",
-    date: "2024-12-01",
-    readTime: "8 min read",
-    category: "Flowers",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "5",
-    title: "Container Gardening for Small Spaces",
-    excerpt: "Don't let limited space stop you! Here's how to create a thriving garden in containers.",
-    content: "Full article content here...",
-    date: "2024-11-28",
-    readTime: "5 min read",
-    category: "Indoor Gardening",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "6",
-    title: "Natural Pest Control Methods for Your Garden",
-    excerpt: "Protect your plants from pests without harmful chemicals using these organic methods.",
-    content: "Full article content here...",
-    date: "2024-11-25",
-    readTime: "7 min read",
-    category: "Plant Care",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "7",
-    title: "Growing Vegetables in Your Balcony Garden",
-    excerpt: "Fresh veggies from your own balcony? It's easier than you think with these tips.",
-    content: "Full article content here...",
-    date: "2024-11-20",
-    readTime: "6 min read",
-    category: "Vegetables",
-    author: "Perfect Gardener",
-    featured: true,
-  },
-  {
-    id: "8",
-    title: "Understanding Soil pH and Plant Health",
-    excerpt: "Learn how soil pH affects your plants and how to adjust it for optimal growth.",
-    content: "Full article content here...",
-    date: "2024-11-15",
-    readTime: "5 min read",
-    category: "Plant Care",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "9",
-    title: "Watering Techniques for Healthy Plants",
-    excerpt: "Over-watering kills more plants than under-watering. Master the art of proper watering.",
-    content: "Full article content here...",
-    date: "2024-11-10",
-    readTime: "4 min read",
-    category: "Beginner Guides",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "10",
-    title: "Creating a Butterfly Garden",
-    excerpt: "Attract beautiful butterflies to your garden with these nectar-rich plant selections.",
-    content: "Full article content here...",
-    date: "2024-11-05",
-    readTime: "6 min read",
-    category: "Flowers",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "11",
-    title: "DIY Vertical Garden Ideas",
-    excerpt: "Maximize your growing space with creative vertical gardening solutions.",
-    content: "Full article content here...",
-    date: "2024-11-01",
-    readTime: "7 min read",
-    category: "DIY & Tutorials",
-    author: "Perfect Gardener",
-  },
-  {
-    id: "12",
-    title: "Monsoon Gardening Tips for India",
-    excerpt: "Protect your garden during the rainy season with these essential monsoon care tips.",
-    content: "Full article content here...",
-    date: "2024-10-28",
-    readTime: "5 min read",
-    category: "Plant Care",
-    author: "Perfect Gardener",
-  },
-];
-
 const formatDate = (dateString: string) => {
   const date = new Date(dateString);
-  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 };
 
 const Posts = () => {
@@ -164,120 +38,102 @@ const Posts = () => {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
   const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [suggestedTerm, setSuggestedTerm] = useState<string | null>(null);
+  const [showSuggestion, setShowSuggestion] = useState(false);
 
-  // Load posts from API
   useEffect(() => {
+    let cancelled = false;
+
     const loadPosts = async () => {
       try {
-        const adminPosts = await postStorage.getAll();
-        
-        if (adminPosts.length > 0) {
-          // Convert AdminPost to Post format
-          const convertedPosts = adminPosts.map((p): Post => ({
-            id: p.id,
-            title: p.title,
-            excerpt: p.excerpt,
-            content: p.content,
-            date: p.date || new Date().toISOString().split('T')[0],
-            readTime: p.readTime || "5 min read",
-            category: p.category || "Uncategorized",
-            author: p.author || "Perfect Gardener",
-            featured: p.featured || false,
-            slug: p.slug,
-          }));
-          setAllPosts(convertedPosts);
-        } else {
-          // Use fallback posts if no admin posts exist
-          setAllPosts(fallbackPosts);
+        setIsLoading(true);
+        const res = await postsAPI.getAll(1, 1000);
+        const normalized = (res.data || []).map((p: any): Post => ({
+          id: String(p.id),
+          title: String(p.title || ""),
+          excerpt: String(p.excerpt || ""),
+          content: String(p.content || ""),
+          date: String(p.date || new Date().toISOString().split("T")[0]),
+          readTime: String(p.readTime || p.read_time || "5 min read"),
+          category: String(p.category || "Uncategorized"),
+          author: String(p.author || "Perfect Gardener"),
+          image: p.image || undefined,
+          featured: Boolean(p.featured),
+          slug: p.slug || undefined,
+        }));
+
+        if (!cancelled) {
+          setAllPosts(normalized);
         }
-      } catch (error) {
-        console.error('Error loading posts:', error);
-        // Use fallback posts on error
-        setAllPosts(fallbackPosts);
+      } catch (e) {
+        if (!cancelled) {
+          setAllPosts([]);
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     loadPosts();
-    
-    // Refresh posts every 5 minutes (reduced from 30 seconds for better performance)
     const interval = setInterval(loadPosts, 300000);
-    
+
     return () => {
+      cancelled = true;
       clearInterval(interval);
     };
   }, []);
 
-  // Extract unique categories dynamically
   const categories = useMemo(() => {
-    return ["All", ...Array.from(new Set(allPosts.map(p => p.category)))];
+    return ["All", ...Array.from(new Set(allPosts.map((p) => p.category).filter(Boolean)))];
   }, [allPosts]);
 
-  const [suggestedTerm, setSuggestedTerm] = useState<string | null>(null);
-  const [showSuggestion, setShowSuggestion] = useState(false);
-
   const filteredPosts = useMemo(() => {
+    const byCategory = allPosts.filter((post) => selectedCategory === "All" || post.category === selectedCategory);
+
     if (!searchQuery.trim()) {
       setSuggestedTerm(null);
       setShowSuggestion(false);
-      return allPosts.filter((post) => {
-        const matchesCategory = selectedCategory === "All" || post.category === selectedCategory;
-        return matchesCategory;
-      });
+      return byCategory;
     }
 
-    // Use auto-correct for search
-    const searchablePosts = allPosts.filter((post) => {
-      const matchesCategory = selectedCategory === "All" || post.category === selectedCategory;
-      return matchesCategory;
-    });
-
     const { filtered, suggestedTerm: suggestion } = filterWithAutoCorrect(
-      searchablePosts,
+      byCategory,
       searchQuery,
       (post) => `${post.title} ${post.excerpt || ""}`,
       0.5
     );
 
     setSuggestedTerm(suggestion);
-    setShowSuggestion(suggestion !== null && suggestion.toLowerCase() !== searchQuery.toLowerCase());
-
-    return filtered;
+    setShowSuggestion(Boolean(suggestion && suggestion.toLowerCase() !== searchQuery.toLowerCase()));
+    return filtered as Post[];
   }, [allPosts, searchQuery, selectedCategory]);
 
-  const featuredPosts = filteredPosts.filter(p => p.featured);
-  const regularPosts = filteredPosts.filter(p => !p.featured);
+  const featuredPosts = filteredPosts.filter((p) => p.featured);
+  const regularPosts = filteredPosts.filter((p) => !p.featured);
+  const hasActiveFilters = searchQuery || selectedCategory !== "All";
 
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedCategory("All");
   };
 
-  const hasActiveFilters = searchQuery || selectedCategory !== "All";
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main id="main-content" className="pt-20">
-        {/* Hero Section */}
         <section className="py-8 md:py-12 bg-gradient-to-br from-primary/10 to-accent/5 border-b border-border">
           <div className="container mx-auto px-4">
-            <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-3">
-              Gardening Blog
-            </h1>
-            <p className="text-muted-foreground max-w-2xl">
-              Tips, guides, and insights to help you grow a beautiful garden. Learn from our experts.
-            </p>
+            <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-3">Gardening Blog</h1>
+            <p className="text-muted-foreground max-w-2xl">Tips, guides, and insights to help you grow a beautiful garden.</p>
           </div>
         </section>
 
-        {/* Filters Section */}
         <section className="py-6 bg-muted/30 border-b border-border sticky top-16 z-40">
           <div className="container mx-auto px-4">
             <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-              {/* Search */}
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -309,17 +165,11 @@ const Posts = () => {
                 )}
               </div>
 
-              {/* Mobile Filter Toggle */}
-              <Button 
-                variant="outline" 
-                className="md:hidden"
-                onClick={() => setShowFilters(!showFilters)}
-              >
+              <Button variant="outline" className="md:hidden" onClick={() => setShowFilters(!showFilters)}>
                 <Filter className="w-4 h-4 mr-2" />
                 Categories
               </Button>
 
-              {/* Category Filters - Desktop */}
               <div className="hidden md:flex flex-wrap gap-2">
                 {categories.map((category) => (
                   <Button
@@ -333,7 +183,6 @@ const Posts = () => {
                 ))}
               </div>
 
-              {/* Clear Filters */}
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X className="w-4 h-4 mr-1" />
@@ -342,7 +191,6 @@ const Posts = () => {
               )}
             </div>
 
-            {/* Mobile Filters Dropdown */}
             {showFilters && (
               <div className="md:hidden mt-4 flex flex-wrap gap-2">
                 {categories.map((category) => (
@@ -363,32 +211,24 @@ const Posts = () => {
           </div>
         </section>
 
-        {/* Results Info */}
         <section className="py-4">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Showing {filteredPosts.length} of {allPosts.length} articles
-              </p>
+              <p className="text-sm text-muted-foreground">Showing {filteredPosts.length} articles</p>
               {hasActiveFilters && (
                 <div className="flex items-center gap-2">
-                  {selectedCategory !== "All" && (
-                    <Badge variant="secondary">{selectedCategory}</Badge>
-                  )}
-                  {searchQuery && (
-                    <Badge variant="secondary">"{searchQuery}"</Badge>
-                  )}
+                  {selectedCategory !== "All" && <Badge variant="secondary">{selectedCategory}</Badge>}
+                  {searchQuery && <Badge variant="secondary">"{searchQuery}"</Badge>}
                 </div>
               )}
             </div>
           </div>
         </section>
 
-        {/* Content */}
         <section className="py-6 pb-16">
           <div className="container mx-auto px-4">
             {isLoading ? (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="bg-card rounded-xl border border-border p-6 space-y-4">
                     <div className="h-6 bg-muted rounded animate-pulse w-3/4" />
@@ -402,13 +242,12 @@ const Posts = () => {
               </div>
             ) : filteredPosts.length > 0 ? (
               <div className="space-y-12">
-                {/* Featured Posts */}
                 {featuredPosts.length > 0 && selectedCategory === "All" && !searchQuery && (
                   <div>
                     <h2 className="text-xl font-display font-bold text-foreground mb-6 flex items-center gap-2">
                       ⭐ Featured Articles
                     </h2>
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
                       {featuredPosts.map((post, index) => (
                         <PostCard key={post.id} post={post} index={index} featured />
                       ))}
@@ -416,14 +255,11 @@ const Posts = () => {
                   </div>
                 )}
 
-                {/* All Posts */}
                 <div>
                   {featuredPosts.length > 0 && selectedCategory === "All" && !searchQuery && (
-                    <h2 className="text-xl font-display font-bold text-foreground mb-6">
-                      All Articles
-                    </h2>
+                    <h2 className="text-xl font-display font-bold text-foreground mb-6">All Articles</h2>
                   )}
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
                     {(selectedCategory === "All" && !searchQuery ? regularPosts : filteredPosts).map((post, index) => (
                       <PostCard key={post.id} post={post} index={index} />
                     ))}
@@ -433,26 +269,17 @@ const Posts = () => {
             ) : (
               <div className="text-center py-16 bg-muted/50 rounded-xl">
                 <p className="text-xl font-medium text-foreground mb-2">No articles found</p>
-                <p className="text-muted-foreground mb-4">
-                  Try adjusting your search or filter criteria
-                </p>
-                <Button variant="outline" onClick={clearFilters}>
-                  Clear all filters
-                </Button>
+                <p className="text-muted-foreground mb-4">Try adjusting your search or filter criteria</p>
+                <Button variant="outline" onClick={clearFilters}>Clear all filters</Button>
               </div>
             )}
           </div>
         </section>
 
-        {/* Tools CTA */}
         <section className="py-12 bg-muted/30 border-t border-border">
           <div className="container mx-auto px-4 text-center">
-            <h2 className="text-2xl font-display font-bold text-foreground mb-3">
-              Ready to Start Gardening?
-            </h2>
-            <p className="text-muted-foreground mb-6">
-              Check out our free gardening tools to plan your garden.
-            </p>
+            <h2 className="text-2xl font-display font-bold text-foreground mb-3">Ready to Start Gardening?</h2>
+            <p className="text-muted-foreground mb-6">Check out our free gardening tools to plan your garden.</p>
             <Button asChild size="lg">
               <Link to="/tools" className="group">
                 Explore Tools
@@ -477,7 +304,7 @@ interface PostCardProps {
 
 const PostCard = ({ post, index, featured }: PostCardProps) => {
   const postUrl = post.slug ? `/blog/${post.slug}` : `/posts`;
-  
+
   return (
     <Link to={postUrl}>
       <article
@@ -487,13 +314,12 @@ const PostCard = ({ post, index, featured }: PostCardProps) => {
         )}
         style={{ animationDelay: `${index * 100}ms` }}
       >
-        {/* Thumbnail Image */}
         {post.image && (
-          <div className="relative w-full h-48 overflow-hidden bg-muted">
-            <img 
-              src={post.image} 
+          <div className="relative w-full aspect-video overflow-hidden bg-muted">
+            <img
+              src={post.image}
               alt={post.title}
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+              className="w-full h-full object-contain block group-hover:scale-110 transition-transform duration-500"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -503,27 +329,17 @@ const PostCard = ({ post, index, featured }: PostCardProps) => {
         )}
 
         <div className="p-6 flex flex-col flex-grow">
-          {/* Category Badge */}
           <div className="flex items-center gap-2 mb-3">
-            <Badge variant={featured ? "default" : "secondary"} className="text-xs">
-              {post.category}
-            </Badge>
-            {featured && (
-              <span className="text-xs text-primary font-medium">Featured</span>
-            )}
+            <Badge variant={featured ? "default" : "secondary"} className="text-xs">{post.category}</Badge>
+            {featured && <span className="text-xs text-primary font-medium">Featured</span>}
           </div>
 
-          {/* Title */}
           <h3 className="font-display font-semibold text-lg text-foreground mb-3 line-clamp-2 group-hover:text-primary transition-colors">
             {post.title}
           </h3>
 
-          {/* Excerpt */}
-          <p className="text-muted-foreground text-sm mb-4 line-clamp-3 flex-grow">
-            {post.excerpt}
-          </p>
+          <p className="text-muted-foreground text-sm mb-4 line-clamp-3 flex-grow">{post.excerpt}</p>
 
-          {/* Meta */}
           <div className="flex items-center gap-4 text-xs text-muted-foreground mt-auto pt-4 border-t border-border">
             <span className="flex items-center gap-1">
               <Calendar className="w-3 h-3" />

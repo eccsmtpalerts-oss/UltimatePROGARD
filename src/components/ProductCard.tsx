@@ -49,7 +49,7 @@ export function ProductCard({ product, className, index = 0 }: ProductCardProps)
               src={primaryImage}
               alt={product.name}
               loading="lazy"
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              className="w-full h-full object-contain block transition-transform duration-300 group-hover:scale-105"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23e5e7eb' width='400' height='400'/%3E%3Ctext fill='%239ca3af' font-family='system-ui' font-size='20' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3ENo Image%3C/text%3E%3C/svg%3E";
               }}
@@ -95,16 +95,16 @@ export function ProductCard({ product, className, index = 0 }: ProductCardProps)
         </div>
 
         {/* Content */}
-        <div className="p-4 space-y-2">
+        <div className="p-3 sm:p-4 space-y-2">
           <Link to={`/product/${product.id}`}>
             <h3 
-              className="font-display font-semibold text-foreground line-clamp-2 text-sm leading-snug min-h-[2.5rem] cursor-pointer hover:text-primary transition-colors group-hover:underline decoration-primary/50"
+              className="font-display font-semibold text-foreground line-clamp-2 text-[13px] sm:text-sm leading-snug min-h-[2.25rem] sm:min-h-[2.5rem] cursor-pointer hover:text-primary transition-colors group-hover:underline decoration-primary/50"
             >
               {product.name}
             </h3>
           </Link>
 
-          <p className="gradient-text font-bold text-xl transition-transform group-hover:scale-110 inline-block">
+          <p className="gradient-text font-bold text-lg sm:text-xl transition-transform group-hover:scale-110 inline-block">
             {product.price}
           </p>
 

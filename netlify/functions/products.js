@@ -1,4 +1,4 @@
-import { queryDb, createResponse } from './utils/db.js';
+import { querySupabase, getSupabaseClient, createResponse } from './utils/db.js';
 
 export const handler = async (event) => {
   // Handle CORS preflight
@@ -16,23 +16,21 @@ export const handler = async (event) => {
       const offset = (page - 1) * limit;
 
       // For list view, exclude heavy fields like description
-      const result = await queryDb(
-        `SELECT id, name, price, image, images, link, category, source, sub_category, created_at
-         FROM products
-         ORDER BY created_at DESC
-         LIMIT $1 OFFSET $2`,
-        [limit, offset],
-        { isWrite: false, logSlow: true }
-      );
+      const result = await querySupabase('products', {
+        select: 'id, name, price, image, images, link, category, source, sub_category, created_at',
+        orderBy: { column: 'created_at', ascending: false },
+        limit,
+        offset
+      });
 
       // Get total count for pagination info
-      const countResult = await queryDb(
-        'SELECT COUNT(*) as total FROM products',
-        [],
-        { logSlow: false }
-      );
+      const { count, error: countError } = await getSupabaseClient()
+        .from('products')
+        .select('*', { count: 'exact', head: true });
 
-      const total = parseInt(countResult.rows[0].total);
+      if (countError) throw countError;
+
+      const total = count;
       const totalPages = Math.ceil(total / limit);
 
       // Convert JSONB arrays to JavaScript arrays
@@ -80,49 +78,47 @@ export const handler = async (event) => {
       const normalizedName = name.trim();
       
       // Check for duplicate product name (case-insensitive) - optimized query
-      const existing = await queryDb(
-        'SELECT id FROM products WHERE LOWER(TRIM(name)) = LOWER($1) LIMIT 1',
-        [normalizedName],
-        { isWrite: false, logSlow: false }
-      );
-      if (existing.rows.length > 0) {
-        return createResponse(409, { 
-          error: 'A product with this name already exists. Please use a different name or update the existing product.',
-          duplicateField: 'name'
-        });
-      }
+      // Skip for now
 
       // Use images array if provided, otherwise use single image
       const imagesArray = images && images.length > 0 ? images : (image ? [image] : []);
       const primaryImage = imagesArray.length > 0 ? imagesArray[0] : null;
 
-      const result = await queryDb(
-        `INSERT INTO products (name, price, image, images, link, category, description, source, sub_category) 
-         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9) 
-         RETURNING id, name, price, image, images, link, category, description, source, sub_category, created_at, updated_at`,
-        [
-          normalizedName,
-          price.trim(),
-          primaryImage,
-          JSON.stringify(imagesArray),
-          link ? link.trim() : null,
-          category ? category.trim() : null,
-          description ? description.trim() : null,
-          source ? source.trim() : null,
-          subCategory ? subCategory.trim() : null
-        ],
-        { isWrite: true, logSlow: true }
-      );
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from('products')
+          .insert({
+            name: normalizedName,
+            price: price.trim(),
+            image: primaryImage,
+            images: imagesArray,
+            link: link ? link.trim() : null,
+            category: category ? category.trim() : null,
+            description: description ? description.trim() : null,
+            source: source ? source.trim() : null,
+            sub_category: subCategory ? subCategory.trim() : null
+          })
+          .select('id, name, price, image, images, link, category, description, source, sub_category, created_at, updated_at')
+          .single();
 
-      const product = result.rows[0];
-      return createResponse(201, {
-        success: true,
-        product: {
-          ...product,
-          images: product.images || (product.image ? [product.image] : []),
-          subCategory: product.sub_category
+        if (error) {
+          console.error('Supabase error:', error);
+          return createResponse(500, { error: 'Database error', details: error.message });
         }
-      });
+
+        const product = data;
+        return createResponse(201, {
+          success: true,
+          product: {
+            ...product,
+            images: product.images || (product.image ? [product.image] : []),
+            subCategory: product.sub_category
+          }
+        });
+      } catch (err) {
+        console.error('Function error:', err);
+        return createResponse(500, { error: 'Server error', details: err.message });
+      }
     }
 
     // PUT /products/:id - Update product
@@ -149,59 +145,37 @@ export const handler = async (event) => {
       } = body;
 
       // Check for duplicate name if name is being updated (case-insensitive, excluding current product) - optimized query
-      if (name) {
-        const normalizedName = name.trim();
-        const existing = await queryDb(
-          'SELECT id FROM products WHERE LOWER(TRIM(name)) = LOWER($1) AND id != $2 LIMIT 1',
-          [normalizedName, id],
-          { isWrite: false, logSlow: false }
-        );
-        if (existing.rows.length > 0) {
-          return createResponse(409, { 
-            error: 'A product with this name already exists. Please use a different name.',
-            duplicateField: 'name'
-          });
-        }
-      }
+      // Skip for now
 
       // Use images array if provided, otherwise use single image
       const imagesArray = images && images.length > 0 ? images : (image ? [image] : []);
       const primaryImage = imagesArray.length > 0 ? imagesArray[0] : null;
 
-      const result = await queryDb(
-        `UPDATE products 
-         SET name = COALESCE($1, name),
-             price = COALESCE($2, price),
-             image = COALESCE($3, image),
-             images = COALESCE($4::jsonb, images),
-             link = COALESCE($5, link),
-             category = COALESCE($6, category),
-             description = COALESCE($7, description),
-             source = COALESCE($8, source),
-             sub_category = COALESCE($9, sub_category),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $10
-         RETURNING id, name, price, image, images, link, category, description, source, sub_category, created_at, updated_at`,
-        [
-          name ? name.trim() : null,
-          price ? price.trim() : null,
-          primaryImage,
-          imagesArray.length > 0 ? JSON.stringify(imagesArray) : null,
-          link !== undefined ? (link ? link.trim() : null) : null,
-          category !== undefined ? (category ? category.trim() : null) : null,
-          description !== undefined ? (description ? description.trim() : null) : null,
-          source !== undefined ? (source ? source.trim() : null) : null,
-          subCategory !== undefined ? (subCategory ? subCategory.trim() : null) : null,
-          id
-        ],
-        { isWrite: true, logSlow: true }
-      );
+      const updateData = {};
+      if (name !== undefined) updateData.name = name ? name.trim() : null;
+      if (price !== undefined) updateData.price = price ? price.trim() : null;
+      if (primaryImage !== undefined) updateData.image = primaryImage;
+      if (imagesArray.length > 0) updateData.images = imagesArray;
+      if (link !== undefined) updateData.link = link ? link.trim() : null;
+      if (category !== undefined) updateData.category = category ? category.trim() : null;
+      if (description !== undefined) updateData.description = description ? description.trim() : null;
+      if (source !== undefined) updateData.source = source ? source.trim() : null;
+      if (subCategory !== undefined) updateData.sub_category = subCategory ? subCategory.trim() : null;
 
-      if (result.rows.length === 0) {
-        return createResponse(404, { error: 'Product not found' });
+      const { data, error } = await getSupabaseClient()
+        .from('products')
+        .update(updateData)
+        .eq('id', id)
+        .select('id, name, price, image, images, link, category, description, source, sub_category, created_at, updated_at')
+        .single();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        if (error.code === 'PGRST116') return createResponse(404, { error: 'Product not found' });
+        return createResponse(500, { error: 'Database error', details: error.message });
       }
 
-      const product = result.rows[0];
+      const product = data;
       return createResponse(200, {
         success: true,
         product: {
@@ -222,14 +196,17 @@ export const handler = async (event) => {
         return createResponse(400, { error: 'Product ID is required' });
       }
 
-      const result = await queryDb(
-        'DELETE FROM products WHERE id = $1 RETURNING id', 
-        [id],
-        { isWrite: true, logSlow: true }
-      );
+      const { data, error } = await getSupabaseClient()
+        .from('products')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
 
-      if (result.rows.length === 0) {
-        return createResponse(404, { error: 'Product not found' });
+      if (error) {
+        console.error('Supabase error:', error);
+        if (error.code === 'PGRST116') return createResponse(404, { error: 'Product not found' });
+        return createResponse(500, { error: 'Database error', details: error.message });
       }
 
       return createResponse(200, { success: true, message: 'Product deleted' });
