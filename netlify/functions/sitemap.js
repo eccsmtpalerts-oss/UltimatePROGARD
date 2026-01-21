@@ -1,13 +1,10 @@
-import { querySupabase, createResponse } from './utils/db.js';
+import { querySupabase } from './utils/db.js';
 
-/**
- * Dynamic Sitemap Generator
- * Automatically generates sitemap.xml with all posts from the database
- * This ensures new posts are automatically included in search engine indexing
- */
-export const handler = async (event) => {
+export const handler = async () => {
+  const BASE_URL = 'https://www.perfectgardener.in';
+  const today = new Date().toISOString().split('T')[0];
+
   try {
-    // Fetch all posts from database
     const result = await querySupabase('posts', {
       select: 'slug, updated_at, created_at',
       filters: { slug: { not: null } },
@@ -15,103 +12,80 @@ export const handler = async (event) => {
     });
 
     const posts = result.rows || [];
-    const baseUrl = 'https://perfectgardener.netlify.app';
-    const currentDate = new Date().toISOString().split('T')[0];
 
-    // Static pages (always included)
     const staticPages = [
-      { url: '/', priority: '1.0', changefreq: 'weekly' },
-      { url: '/products', priority: '0.9', changefreq: 'weekly' },
-      { url: '/posts', priority: '0.9', changefreq: 'weekly' },
-      { url: '/about', priority: '0.8', changefreq: 'monthly' },
-      { url: '/contact', priority: '0.8', changefreq: 'monthly' },
-      { url: '/privacy', priority: '0.5', changefreq: 'yearly' },
-      { url: '/tools', priority: '0.8', changefreq: 'monthly' },
-      { url: '/tools/pot-calculator', priority: '0.7', changefreq: 'monthly' },
-      { url: '/tools/bloom-calculator', priority: '0.7', changefreq: 'monthly' },
-      { url: '/tools/budget-planner', priority: '0.7', changefreq: 'monthly' },
-      { url: '/tools/flower-calendar', priority: '0.7', changefreq: 'monthly' },
+      { path: '/', priority: '1.0', freq: 'weekly' },
+      { path: '/products', priority: '0.9', freq: 'weekly' },
+      { path: '/posts', priority: '0.9', freq: 'weekly' },
+      { path: '/about', priority: '0.8', freq: 'monthly' },
+      { path: '/contact', priority: '0.8', freq: 'monthly' },
+      { path: '/privacy', priority: '0.5', freq: 'yearly' },
+      { path: '/tools', priority: '0.8', freq: 'monthly' },
+      { path: '/tools/pot-calculator', priority: '0.7', freq: 'monthly' },
+      { path: '/tools/bloom-calculator', priority: '0.7', freq: 'monthly' },
+      { path: '/tools/budget-planner', priority: '0.7', freq: 'monthly' },
+      { path: '/tools/flower-calendar', priority: '0.7', freq: 'monthly' }
     ];
 
-    // Generate XML sitemap
-    let sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml"
-        xmlns:mobile="http://www.google.com/schemas/sitemap-mobile/1.0"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
-`;
+    let sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    sitemap += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
 
-    // Add static pages
-    staticPages.forEach(page => {
-      sitemap += `  <url>
-    <loc>${baseUrl}${page.url}</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>${page.changefreq}</changefreq>
-    <priority>${page.priority}</priority>
-  </url>
-`;
+    // Static pages
+    staticPages.forEach(p => {
+      sitemap += `
+  <url>
+    <loc>${BASE_URL}${p.path}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>${p.freq}</changefreq>
+    <priority>${p.priority}</priority>
+  </url>`;
     });
 
-    // Add dynamic blog posts
+    // Blog posts
     posts.forEach(post => {
-      const lastmod = post.updated_at 
-        ? new Date(post.updated_at).toISOString().split('T')[0]
-        : (post.created_at 
-          ? new Date(post.created_at).toISOString().split('T')[0]
-          : currentDate);
-      
-      sitemap += `  <url>
-    <loc>${baseUrl}/blog/${post.slug}</loc>
+      const lastmod = post.updated_at
+        ? post.updated_at.split('T')[0]
+        : post.created_at
+          ? post.created_at.split('T')[0]
+          : today;
+
+      sitemap += `
+  <url>
+    <loc>${BASE_URL}/blog/${post.slug}</loc>
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
-  </url>
-`;
+  </url>`;
     });
 
-    sitemap += `</urlset>`;
+    sitemap += `\n</urlset>`;
 
-    // Return XML with proper headers
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+        'Cache-Control': 'public, max-age=600, stale-while-revalidate=300'
       },
-      body: sitemap,
+      body: sitemap
     };
-  } catch (error) {
-    console.error('Sitemap generation error:', error);
-    
-    // Return a basic sitemap on error (fallback)
-    const baseUrl = 'https://perfectgardener.netlify.app';
-    const currentDate = new Date().toISOString().split('T')[0];
-    
-    const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
+
+  } catch (err) {
+    console.error('Sitemap error:', err);
+
+    const fallback = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>${baseUrl}/</loc>
-    <lastmod>${currentDate}</lastmod>
+    <loc>${BASE_URL}/</loc>
+    <lastmod>${today}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/posts</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
   </url>
 </urlset>`;
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/xml; charset=utf-8',
-      },
-      body: fallbackSitemap,
+      headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+      body: fallback
     };
   }
 };
-
