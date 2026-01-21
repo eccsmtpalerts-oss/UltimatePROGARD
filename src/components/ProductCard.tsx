@@ -116,7 +116,7 @@ export function ProductCard({ product, className, index = 0 }: ProductCardProps)
               className="focus-ring"
             >
               <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-              Buy this product
+              Buy Now
               <ExternalLink className="w-3.5 h-3.5 ml-2 transition-transform group-hover/btn:translate-x-1" />
             </a>
           </Button>
