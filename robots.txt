@@ -1,11 +1,17 @@
-# Perfect Gardener - robots.txt
-# This file tells search engines how to crawl and index the website
+# =========================================================
+# Perfect Gardener - robots.txt (Production)
+# Purpose: SEO-friendly, AI-compatible, Netlify-safe
+# =========================================================
 
-# Allow all bots to crawl the entire site
+# ---------------------------------------------------------
+# Default rule: allow crawling
+# ---------------------------------------------------------
 User-agent: *
 Allow: /
 
-# Specific rules for common search engines
+# ---------------------------------------------------------
+# Major search engines (explicit allow)
+# ---------------------------------------------------------
 User-agent: Googlebot
 Allow: /
 
@@ -18,21 +24,61 @@ Allow: /
 User-agent: DuckDuckBot
 Allow: /
 
-# Block bad bots
+User-agent: Baiduspider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+# ---------------------------------------------------------
+# AI / LLM crawlers (allow – important for AI SEO)
+# ---------------------------------------------------------
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+# ---------------------------------------------------------
+# SEO & audit tools (ALLOW – do NOT block)
+# ---------------------------------------------------------
 User-agent: AhrefsBot
-Disallow: /
+Allow: /
 
 User-agent: SemrushBot
-Disallow: /
+Allow: /
 
+User-agent: Screaming Frog SEO Spider
+Allow: /
+
+User-agent: SiteAuditBot
+Allow: /
+
+# ---------------------------------------------------------
+# Aggressive scrapers / bandwidth abusers (BLOCK)
+# ---------------------------------------------------------
 User-agent: MJ12bot
 Disallow: /
 
-# Sitemap location - Dynamic sitemap that automatically includes all posts
-Sitemap: https://perfectgardener.netlify.app/.netlify/functions/sitemap
+User-agent: DotBot
+Disallow: /
 
-# Crawl delay (optional - allow 1 second delay between requests)
-Crawl-delay: 1
+User-agent: BLEXBot
+Disallow: /
 
-# Request rate (optional - allow up to 10 requests per second)
-Request-rate: 10/1s
+User-agent: DataForSeoBot
+Disallow: /
+
+# ---------------------------------------------------------
+# Sitemap (MUST match primary domain)
+# ---------------------------------------------------------
+Sitemap: https://www.perfectgardener.in/.netlify/functions/sitemap
